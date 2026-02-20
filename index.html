@@ -295,6 +295,8 @@
             const [filtroMes, setFiltroMes] = useState('');
             const [filtroAno, setFiltroAno] = useState('2026');
             const [filtroTipologia, setFiltroTipologia] = useState('');
+            const [filtroCaixa, setFiltroCaixa] = useState('');
+            const [filtroOperacao, setFiltroOperacao] = useState('');
             const [isLoading, setIsLoading] = useState(false);
             const [lastUpdate, setLastUpdate] = useState(null);
             const chartRefs = useRef({});
@@ -1537,11 +1539,14 @@
                 // Isto permite que E1-Embalagem (tipologia Frac) seja encontrada quando filtramos por tipologia E1
                 // IMPORTANTE: Excluir encomendas adicionadas (pendentes/stock) - só contar as originais terminadas
                 const encFiltradasSemTipologia = encomendas.filter(e => {
-                    // Excluir encomendas adicionadas posteriormente (pendentes faturadas/stock)
-                    if(e._adicionada) return false;
+                    // Excluir pendentes faturadas (não terminadas) mas INCLUIR as em stock (já produzidas)
+                    if(e._adicionada && e._origem !== 'stock') return false;
                     
-                    // Prioridade: entrega > embalamento > produção
-                    const mesAno = e.mesAnoEntrega || e.mesAnoEmbalamento || e.mesAnoProducao;
+                    // Para encomendas em stock, usar mesAnoProducao como referência de data
+                    // Para terminadas, usar entrega > embalamento > produção
+                    const mesAno = e._origem === 'stock' 
+                        ? (e.mesAnoProducao || e.mesAnoEmbalamento || e.mesAnoEntrega)
+                        : (e.mesAnoEntrega || e.mesAnoEmbalamento || e.mesAnoProducao);
                     const ano = mesAno ? mesAno.split('/')[1] : '';
                     if(filtroAno && ano !== filtroAno) return false;
                     if(filtroMes && mesAno !== filtroMes) return false;
@@ -1561,25 +1566,27 @@
                     return true;
                 });
                 
-                // Para cálculo de quantidades PRODUZIDAS (OEE/Operações), usar APENAS terminadas
-                // As encomendas em produção ainda não estão terminadas, não devem contar como produzidas
-                const todasEncParaOEE = encFiltradasSemTipologia; // SÓ TERMINADAS
-                console.log('📦 Encomendas para OEE (só terminadas):', { terminadas: encFiltradasSemTipologia.length, total: todasEncParaOEE.length });
+                // Para cálculo de quantidades PRODUZIDAS: usar só encFiltradasSemTipologia
+                // que já inclui terminadas + em stock (via _origem='stock')
+                // NÃO adicionar encProducaoFiltradas - evita duplicados
+                const todasEncParaOEE = encFiltradasSemTipologia;
+                console.log('📦 Encomendas para OEE:', { terminadas: encFiltradasSemTipologia.filter(e=>e._origem!=='stock').length, emStock: encFiltradasSemTipologia.filter(e=>e._origem==='stock').length, total: todasEncParaOEE.length });
                 
                 const qtdPorCaixaArtigo = {};
                 const qtdPorCaixaNormalizada = {}; // Com espaços normalizados
                 todasEncParaOEE.forEach(e => {
                     // Usar CAIXA prioritariamente (tem nomes correctos), Ligacao como fallback
-                    const caixa = e.caixa || e.ligacao;
-                    if(caixa && caixa.trim() && caixa !== '#N/D' && caixa !== '#N/A') {
+                    const caixaRaw = e.caixa || e.ligacao;
+                    if(caixaRaw && caixaRaw.trim() && caixaRaw !== '#N/D' && caixaRaw !== '#N/A') {
+                        // NORMALIZAR sempre: colapsar espaços duplos (ex: "E1-Embalagem  A" → "E1-Embalagem A")
+                        const caixa = caixaRaw.replace(/\s+/g, ' ').trim();
                         if(!qtdPorCaixaArtigo[caixa]) qtdPorCaixaArtigo[caixa] = 0;
                         // Usar quantidade PRODUZIDA (não entregue) para OEE
                         qtdPorCaixaArtigo[caixa] += e.quantidade || e.qtdProduzida || e.qtdEntregue || 0;
                         
-                        // Também guardar versão normalizada (sem espaços extras)
-                        const caixaNorm = caixa.replace(/\s+/g, ' ').trim();
-                        if(!qtdPorCaixaNormalizada[caixaNorm]) qtdPorCaixaNormalizada[caixaNorm] = 0;
-                        qtdPorCaixaNormalizada[caixaNorm] += e.quantidade || e.qtdProduzida || e.qtdEntregue || 0;
+                        // qtdPorCaixaNormalizada é agora idêntico (já normalizamos acima)
+                        if(!qtdPorCaixaNormalizada[caixa]) qtdPorCaixaNormalizada[caixa] = 0;
+                        qtdPorCaixaNormalizada[caixa] += e.quantidade || e.qtdProduzida || e.qtdEntregue || 0;
                     }
                 });
                 
@@ -1749,10 +1756,47 @@
                 // Análise por Unidade/Tipologia/Operação
                 const analiseOperacoes = {};
                 opsFiltradas.forEach(r => {
-                    const key = `${r.unidadeProducao}|${r.tipologia}|${r.operacao}`;
-                    // Buscar objetivo - tentar nome original e normalizado
+                    // Incluir artigo na chave para que cada caixa tenha a sua própria linha
+                    const artigo = r.artigo || '';
+                    const key = `${r.unidadeProducao}|${r.tipologia}|${r.operacao}|${artigo}`;
+                    // Buscar objetivo por operação específica
+                    // Lógica: 1) operação exata  2) artigo+sufixo operação (frações)  3) artigo/caixa  4) tipologia
                     const opNorm = normalizarOperacao(r.operacao);
-                    const tempoObj = objetivos[r.operacao] || objetivos[opNorm] || objetivosTipologia[r.tipologia] || 0;
+                    const artigoNorm = artigo ? normalizarNome(artigo) : '';
+                    const artigoSemEspacos = artigo ? artigo.replace(/\s+/g, '').toLowerCase() : '';
+                    
+                    // Tentar construir nome específico: artigo + sufixo da operação
+                    // Ex: artigo="E2-Frac 8" + op="E2-Frac-Preparação e Montagem" → "E2-Frac 8-Preparação e Montagem"
+                    // Ex: artigo="KC 390-Lower Dir" + op="KC390-Soldadura Integral bastidor" → já tem match direto
+                    let tempoObjEspecifico = 0;
+                    if(artigo && r.operacao) {
+                        // Extrair sufixo da operação: tudo depois do primeiro hífen (ex: "-Preparação e Montagem")
+                        const hifenIdx = r.operacao.indexOf('-');
+                        if(hifenIdx >= 0) {
+                            const sufixoOp = r.operacao.substring(hifenIdx); // ex: "-Preparação e Montagem"
+                            const nomeEspecifico = artigo + sufixoOp; // ex: "E2-Frac 8-Preparação e Montagem"
+                            const nomeEspecificoNorm = normalizarOperacao(nomeEspecifico);
+                            tempoObjEspecifico = objetivos[nomeEspecifico] || objetivos[nomeEspecificoNorm] || 0;
+                            
+                            // Também tentar com segundo hífen (operações com prefixo mais longo)
+                            // Ex: op="KC390-Frac-Preparação e Montagem" → sufixo="-Preparação e Montagem"
+                            if(!tempoObjEspecifico) {
+                                const segundoHifen = r.operacao.indexOf('-', hifenIdx + 1);
+                                if(segundoHifen >= 0) {
+                                    const sufixoOp2 = r.operacao.substring(segundoHifen); // ex: "-Preparação e Montagem"
+                                    const nomeEspecifico2 = artigo + sufixoOp2;
+                                    const nomeEspecifico2Norm = normalizarOperacao(nomeEspecifico2);
+                                    tempoObjEspecifico = objetivos[nomeEspecifico2] || objetivos[nomeEspecifico2Norm] || 0;
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Prioridade: 1) operação exata  2) artigo+sufixo  3) artigo/caixa  4) tipologia
+                    const tempoObj = objetivos[r.operacao] || objetivos[opNorm]
+                                     || tempoObjEspecifico
+                                     || (artigo ? (objetivosTipologia[artigo] || objetivosNorm[artigoNorm] || objetivosNorm[artigoSemEspacos] || objetivosNorm[artigo.replace(/\s+/g, ' ').trim()]) : 0)
+                                     || objetivosTipologia[r.tipologia] || 0;
                     if(!analiseOperacoes[key]) {
                         analiseOperacoes[key] = {
                             unidadeProducao: r.unidadeProducao || 'Sem Unidade',
@@ -1769,7 +1813,6 @@
                     analiseOperacoes[key].numRegistos++;
                     if(r.artigo) {
                         analiseOperacoes[key].artigos.add(r.artigo);
-                        // Atualizar caixa com o último artigo (ou juntar vários)
                         analiseOperacoes[key].caixa = r.artigo;
                     }
                 });
@@ -1778,8 +1821,8 @@
                 const analiseArray = Object.values(analiseOperacoes).map(a => {
                     // Buscar quantidade produzida - primeiro por artigos, depois por tipologia
                     const artigos = Array.from(a.artigos || []);
-                    // Se há vários artigos, juntar os nomes
-                    const caixaDisplay = artigos.length > 1 ? artigos.join(', ') : (artigos[0] || a.caixa);
+                    // Cada linha já corresponde a um artigo específico (chave inclui artigo)
+                    const caixaDisplay = artigos[0] || a.caixa;
                     const qtdProduzida = getQtdPorOperacao(a.tipologia, artigos, a.operacao);
                     const tempoMedioPorCaixa = qtdProduzida > 0 ? a.tempoTotal / qtdProduzida : 0;
                     const tempoObjetivoH = a.tempoObjetivo / 60; // converter para horas
@@ -1795,12 +1838,67 @@
                         tempoMedioH,
                         racio
                     };
-                }).sort((a,b) => {
-                    // Ordenar por rácio do mais alto para o mais baixo
-                    // Sem rácio (0) vai para o fim
-                    if(a.racio > 0 && b.racio === 0) return -1;
-                    if(a.racio === 0 && b.racio > 0) return 1;
-                    return b.racio - a.racio;
+                });
+
+                // Matriz de ordem das operações por programa
+                const ordemOperacoes = {
+                    // E2
+                    'E2- Soldadura Integral do bastidor': 1,
+                    'E2- Colocação de fundo e patins': 2,
+                    'E2-Montagem e revestimento integral de suportes': 3,
+                    'E2-Preparação de Bolsa de alumínio': 4,
+                    'E2-Montagem de suportes, topos, colocação de lona e armazenagem': 5,
+                    'E2- Embalamento': 6,
+                    // KC390
+                    'KC390-Soldadura Integral bastidor': 1,
+                    'KC390-Montagem caixa': 2,
+                    'KC390 asa-Preparação de Bolsa de alumínio': 3,
+                    'KC 390-Embalamento': 4,
+                    'KC390 EV-Montagem caixa': 2,
+                    'KC390 EV-Preparação de Bolsa de alumínio': 3,
+                    'KC390 EV-Embalamento': 4,
+                    'KC390 EH-Montagem caixa': 2,
+                    'KC390 EH-Preparação de Bolsa de alumínio': 3,
+                    'KC390 EH-Embalamento': 4,
+                    // Praetor
+                    'Praetor Semi asa- Soldadura Integral do bastidor': 1,
+                    'Praetor Semi asa-Montagem de suportes, topos, colocação de lona e armazenagem': 2,
+                    'Praetor Semi asa-Preparação de Bolsa de alumínio': 3,
+                    'Praetor Semi asa-Embalamento': 4,
+                    'Praetor EH-Montagem': 1,
+                    'Praetor EH-Preparação de Bolsa de alumínio': 2,
+                    'Praetor EH-Embalamento': 3,
+                    'Praetor EV- Montagem caixa': 1,
+                    'Praetor EV-Preparação de Bolsa de alumínio': 2,
+                    'Praetor EV- Embalamento': 3,
+                    'Montagem caixa Tail cone': 1,
+                    'Praetor TC-Preparação de Bolsa de alumínio': 2,
+                    'Embalamento Tail cone': 3,
+                    // E2-Frac
+                    'E2-Frac-Preparação e Montagem': 1,
+                    // KC390-Frac
+                    'KC390-Frac-Preparação e Montagem': 1,
+                    // E1-Frac
+                    'E1-Frac-Preparação e Montagem': 1,
+                    'E1-Preparação e Montagem': 1,
+                    // Maquinacao
+                    'Preparação e Montagem Cx sobras': 1,
+                    // Transporte
+                    'Carga e Transporte de caixas para ANN/EMBARESA2': 1,
+                };
+                
+                // Ordem dos programas (para agrupar caixas do mesmo programa)
+                const ordemProgramas = { 'E2': 1, 'KC390': 2, 'Praetor': 3, 'E2-Frac': 4, 'KC390-Frac': 5, 'E1-Frac': 6, 'Maquinacao': 7, 'Transporte': 8 };
+
+                // Ordenar: 1) caixa (agrupada por programa) 2) ordem da operação no processo
+                analiseArray.sort((a,b) => {
+                    const caixaA = (a.caixaDisplay || a.caixa || '');
+                    const caixaB = (b.caixaDisplay || b.caixa || '');
+                    if(caixaA !== caixaB) return caixaA.localeCompare(caixaB, 'pt');
+                    // Mesma caixa: ordenar pela sequência da operação
+                    const ordemA = ordemOperacoes[a.operacao] || 99;
+                    const ordemB = ordemOperacoes[b.operacao] || 99;
+                    return ordemA - ordemB;
                 });
                 
                 // Agora calcular eficienciaPorTipologia a partir de analiseArray
@@ -2171,7 +2269,7 @@
                         e('option',{value:''},'🏷️ Todas tipologias'),
                         kpis.tipologias.map(t=>e('option',{key:t,value:t},t))
                     ),
-                    (filtroAno||filtroMes||filtroTipologia) && e('button',{className:'btn btn-secondary',onClick:()=>{setFiltroAno('2026');setFiltroMes('');setFiltroTipologia('');}},'✕ Limpar')
+                    (filtroAno||filtroMes||filtroTipologia) && e('button',{className:'btn btn-secondary',onClick:()=>{setFiltroAno('2026');setFiltroMes('');setFiltroTipologia('');setFiltroCaixa('');setFiltroOperacao('');}},'✕ Limpar')
                 ),
                 
                 activeTab==='importar' && e('div',null,
@@ -2330,12 +2428,37 @@
                         // Tabela de Análise de Operações
                         e('div',{className:'section'},
                             e('h3',{className:'section-title',style:{marginBottom:'16px'}},'🔧 Análise de Operações por Unidade / Tipologia'),
+                            // Filtros de Caixa e Operação
+                            e('div',{style:{display:'flex',gap:'12px',marginBottom:'16px',flexWrap:'wrap'}},
+                                e('select',{
+                                    className:'filter-select',
+                                    value:filtroCaixa,
+                                    onChange:ev=>setFiltroCaixa(ev.target.value),
+                                    style:{minWidth:'180px'}
+                                },
+                                    e('option',{value:''},'📦 Todas as caixas'),
+                                    [...new Set((kpis.analiseArray||[]).map(a=>a.caixaDisplay||a.caixa).filter(Boolean))].sort().map(c=>e('option',{key:c,value:c},c))
+                                ),
+                                e('select',{
+                                    className:'filter-select',
+                                    value:filtroOperacao,
+                                    onChange:ev=>setFiltroOperacao(ev.target.value),
+                                    style:{minWidth:'220px'}
+                                },
+                                    e('option',{value:''},'🔧 Todas as operações'),
+                                    [...new Set((kpis.analiseArray||[]).map(a=>a.operacao).filter(Boolean))].sort().map(o=>e('option',{key:o,value:o},o))
+                                ),
+                                (filtroCaixa||filtroOperacao) && e('button',{
+                                    className:'btn btn-secondary',
+                                    onClick:()=>{setFiltroCaixa('');setFiltroOperacao('');}
+                                },'✕ Limpar')
+                            ),
                             e('div',{style:{overflowX:'auto'}},
                                 e('table',{className:'data-table'},
                                     e('thead',null, 
                                         e('tr',null, 
-                                            e('th',null,'Unidade Produção'),
                                             e('th',null,'Caixa'),
+                                            e('th',null,'Unidade Produção'),
                                             e('th',null,'Tipologia'),
                                             e('th',null,'Operação'),
                                             e('th',null,'Tempo Total (h)'),
@@ -2345,22 +2468,49 @@
                                             e('th',null,'Rácio T.Obj/T.Real')
                                         )
                                     ),
-                                    e('tbody',null, 
-                                        (kpis.analiseArray || []).map((a, idx) => {
-                                            const racioColor = a.racio >= 100 ? 'excellent' : a.racio >= 80 ? 'good' : a.racio > 0 ? 'warning' : '';
-                                            return e('tr',{key:idx}, 
-                                                e('td',null, a.unidadeProducao),
-                                                e('td',null, e('strong',null, a.caixaDisplay || a.caixa)),
-                                                e('td',null, a.tipologia),
-                                                e('td',null, a.operacao),
-                                                e('td',null, a.tempoTotalH.toFixed(1)),
-                                                e('td',null, formatNumber(a.qtdProduzida)),
-                                                e('td',null, a.tempoObjetivoH > 0 ? a.tempoObjetivoH.toFixed(2) : 'N/A'),
-                                                e('td',null, a.tempoMedioH.toFixed(2)),
-                                                e('td',null, e('span',{className:`status-badge ${racioColor}`}, a.racio > 0 ? a.racio.toFixed(0) + '%' : 'N/A'))
-                                            );
-                                        })
-                                    )
+                                    e('tbody',null, (() => {
+                                        // Filtrar
+                                        const lista = (kpis.analiseArray || []).filter(a => {
+                                            const caixaOk = !filtroCaixa || (a.caixaDisplay||a.caixa) === filtroCaixa;
+                                            const opOk = !filtroOperacao || a.operacao === filtroOperacao;
+                                            return caixaOk && opOk;
+                                        });
+                                        // Agrupar por caixa para calcular rowspan
+                                        const grupos = {};
+                                        lista.forEach(a => {
+                                            const c = a.caixaDisplay || a.caixa;
+                                            if(!grupos[c]) grupos[c] = [];
+                                            grupos[c].push(a);
+                                        });
+                                        // Ordenar caixas por nome
+                                        const caixasOrdenadas = Object.keys(grupos).sort();
+                                        const rows = [];
+                                        caixasOrdenadas.forEach(caixa => {
+                                            const itens = grupos[caixa];
+                                            itens.forEach((a, i) => {
+                                                const racioColor = a.racio >= 100 ? 'excellent' : a.racio >= 80 ? 'good' : a.racio > 0 ? 'warning' : '';
+                                                const isFirst = i === 0;
+                                                rows.push(e('tr',{
+                                                    key: caixa+'_'+i,
+                                                    style: isFirst && itens.length > 1 ? {borderTop:'2px solid var(--accent-blue)'} : {}
+                                                },
+                                                    isFirst && e('td',{
+                                                        rowSpan: itens.length,
+                                                        style:{verticalAlign:'middle', fontWeight:'700', background:'var(--bg-card)', borderRight:'2px solid var(--accent-blue)', minWidth:'120px'}
+                                                    }, caixa),
+                                                    e('td',null, a.unidadeProducao),
+                                                    e('td',null, a.tipologia),
+                                                    e('td',null, a.operacao),
+                                                    e('td',null, a.tempoTotalH.toFixed(1)),
+                                                    e('td',null, formatNumber(a.qtdProduzida)),
+                                                    e('td',null, a.tempoObjetivoH > 0 ? a.tempoObjetivoH.toFixed(2) : 'N/A'),
+                                                    e('td',null, a.tempoMedioH.toFixed(2)),
+                                                    e('td',null, e('span',{className:`status-badge ${racioColor}`}, a.racio > 0 ? a.racio.toFixed(0) + '%' : 'N/A'))
+                                                ));
+                                            });
+                                        });
+                                        return rows;
+                                    })())
                                 )
                             )
                         ),
