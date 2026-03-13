@@ -2,6 +2,9 @@
 <html lang="pt">
 <head>
     <meta charset="UTF-8">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -17,6 +20,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
@@ -86,6 +90,7 @@
         .section-title { font-size:16px;font-weight:600; }
         .chart-container { height:300px;position:relative; }
         .data-table { width:100%;border-collapse:collapse; }
+        .data-table-scroll { overflow-x:auto;-webkit-overflow-scrolling:touch; }
         .data-table th,.data-table td { padding:12px 16px;text-align:left;border-bottom:1px solid var(--border-color); }
         .data-table th { font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);background:var(--bg-primary); }
         .data-table td { font-size:13px; }
@@ -115,6 +120,82 @@
         .empty-state-text { font-size:14px;color:var(--text-muted);max-width:400px;margin:0 auto; }
         .grid-2 { display:grid;grid-template-columns:repeat(2,1fr);gap:24px; }
         @media(max-width:1024px) { .grid-2{grid-template-columns:1fr;} }
+
+        /* ===== MOBILE ===== */
+        @media(max-width:768px) {
+            .app { padding:12px;padding-top:max(12px,env(safe-area-inset-top));padding-bottom:max(80px,env(safe-area-inset-bottom)); }
+
+            /* Header */
+            .header { padding:12px 0;margin-bottom:16px;gap:8px; }
+            .header h1 { font-size:18px; }
+            .header p { font-size:11px; }
+            .logo { width:40px;height:40px;font-size:20px; }
+            .header-right { display:flex;flex-wrap:wrap;gap:6px; }
+            .header-right .btn { padding:7px 10px;font-size:12px; }
+
+            /* Tabs - scroll horizontal fixo no fundo */
+            .tabs {
+                position:fixed;bottom:0;left:0;right:0;z-index:100;
+                margin:0;padding:6px 8px;
+                border-radius:0;
+                border-top:1px solid var(--border-color);
+                overflow-x:auto;
+                -webkit-overflow-scrolling:touch;
+                scrollbar-width:none;
+                gap:2px;
+                padding-bottom:max(6px,env(safe-area-inset-bottom));
+            }
+            .tabs::-webkit-scrollbar { display:none; }
+            .tab { padding:8px 12px;font-size:11px;white-space:nowrap;flex-shrink:0; }
+
+            /* Botão PDF — esconde nos tabs mobile, fica no header */
+            .tabs .btn-secondary { display:none; }
+
+            /* KPI cards — 2 colunas */
+            .kpi-grid { grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:16px; }
+            .kpi-card { padding:14px; }
+            .kpi-value { font-size:22px; }
+            .kpi-label { font-size:11px; }
+
+            /* Sections */
+            .section { padding:14px;margin-bottom:16px; }
+            .section-title { font-size:14px; }
+
+            /* Tabelas — scroll horizontal */
+            .section { overflow-x:auto; }
+            .data-table th,.data-table td { padding:8px 10px;font-size:12px; }
+
+            /* Filter bar */
+            .filter-bar { gap:6px; }
+            .filter-select { font-size:12px;padding:6px 8px; }
+
+            /* Charts */
+            .chart-container { height:220px; }
+
+            /* Grid 2 col → 1 col */
+            .grid-2 { grid-template-columns:1fr;gap:12px; }
+
+            /* Upload zones — 1 coluna */
+            .upload-grid { grid-template-columns:1fr!important; }
+            .upload-zone { padding:24px 16px; }
+            .upload-icon { font-size:32px;margin-bottom:10px; }
+
+            /* Gauge menor */
+            .gauge-container svg { width:180px!important;height:120px!important; }
+
+            /* Toast msg */
+            .msg-toast { bottom:70px;right:12px;left:12px;text-align:center; }
+
+            /* Empty state */
+            .empty-state { padding:40px 16px; }
+            .empty-state-icon { font-size:48px; }
+        }
+
+        @media(max-width:400px) {
+            .kpi-grid { grid-template-columns:1fr; }
+            .kpi-value { font-size:26px; }
+        }
+
         .summary-row { display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border-color); }
         .summary-row:last-child { border-bottom:none; }
         .summary-label { color:var(--text-secondary);font-size:13px; }
@@ -292,6 +373,8 @@
             const [objetivosTipologia, setObjetivosTipologia] = useState({});
             const [mapCaixaEcode, setMapCaixaEcode] = useState({});
             const [mapaHoras, setMapaHoras] = useState({}); // {mesAno: totalMinutos} ex: {'01/2026': 109938}
+            const [ausencias, setAusencias] = useState([]); // [{nome, dataInicio, dataFim, tipo, estado}]
+            const [mapaHorasDetalhe, setMapaHorasDetalhe] = useState([]); // [{colaborador, mes, total, ...dias}]
             const [filtroMes, setFiltroMes] = useState('');
             const [filtroAno, setFiltroAno] = useState('2026');
             const [filtroTipologia, setFiltroTipologia] = useState('');
@@ -311,6 +394,11 @@
                     return 'https://defaultcade90c14fe343a3860494c20418f8.fb.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/d4580994e5004a7f9934f95e968ae3f5/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=fup1O88I7aEoSyDzrILnUSRbaCYbucNvpKktzTubedQ'; 
                 }
             });
+
+            const [urlConfiguracoes, setUrlConfiguracoes] = useState(() => {
+                try { return localStorage.getItem('kpi_url_configuracoes') || 'https://defaultcade90c14fe343a3860494c20418f8.fb.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/5da3828d37564c2ba8af16ca06e2b7e0/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=NRb520YI7wcDJjMufAfUzrlYIQSQ3ub6dl1KrQ3_FxI'; } catch(e) { return 'https://defaultcade90c14fe343a3860494c20418f8.fb.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/5da3828d37564c2ba8af16ca06e2b7e0/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=NRb520YI7wcDJjMufAfUzrlYIQSQ3ub6dl1KrQ3_FxI'; }
+            });
+            const [isLoadingConfig, setIsLoadingConfig] = useState(false);
             
             // Guardar URL quando muda
             useEffect(() => {
@@ -318,6 +406,93 @@
                     try { localStorage.setItem('kpi_url_powerautomate', urlPowerAutomate); } catch(e) {}
                 }
             }, [urlPowerAutomate]);
+
+            useEffect(() => {
+                try { localStorage.setItem('kpi_url_configuracoes', urlConfiguracoes); } catch(e) {}
+            }, [urlConfiguracoes]);
+
+            // Função para carregar configurações (ausências, mapa horas) — fluxo separado
+            const carregarConfiguracoes = async () => {
+                if(!urlConfiguracoes) {
+                    showMsg('⚠️ Configure o URL do fluxo de Configurações nas definições', 'error');
+                    return;
+                }
+                setIsLoadingConfig(true);
+                showMsg('🔄 A carregar configurações...', 'info');
+                try {
+                    const response = await fetch(urlConfiguracoes, {
+                        method: 'POST',
+                        mode: 'cors',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ acao: 'ler' })
+                    });
+                    if(!response.ok) throw new Error('Erro: ' + response.status);
+                    const data = JSON.parse(await response.text());
+
+                    const parseField = (v) => {
+                        if(Array.isArray(v)) return v;
+                        if(typeof v === 'string') { try { return JSON.parse(v); } catch(e) { return []; } }
+                        return [];
+                    };
+                    if(typeof data.ausencias === 'string') data.ausencias = parseField(data.ausencias);
+                    if(typeof data.mapaHoras === 'string') data.mapaHoras = parseField(data.mapaHoras);
+
+                    // Ausências
+                    if(data.ausencias && Array.isArray(data.ausencias)) {
+                        console.log('🔍 Ausências raw:', data.ausencias.length, data.ausencias[0]);
+                        const toDate = (v) => {
+                            if(!v) return '';
+                            const n = parseFloat(v);
+                            if(!isNaN(n) && n > 40000 && n < 60000) {
+                                // Serial Excel
+                                return new Date((n - 25569) * 86400 * 1000).toISOString().split('T')[0];
+                            }
+                            const s = v.toString().trim();
+                            if(s.includes('T')) return s.split('T')[0];
+                            if(/^\d{4}-\d{2}-\d{2}/.test(s)) return s.substring(0,10);
+                            if(s.includes('/')) { const p=s.split('/'); if(p.length===3) return p[2]+'-'+p[1].padStart(2,'0')+'-'+p[0].padStart(2,'0'); }
+                            return s;
+                        };
+                        const aus = data.ausencias.map(row => ({
+                            nome: row['Nome'] || row['nome'] || row['Name'] || '',
+                            dataInicio: toDate(row['DataInicio'] || row['dataInicio'] || row['Data Inicio'] || row['Data'] || ''),
+                            dataFim: toDate(row['DataFim'] || row['dataFim'] || row['Data Fim'] || row['DataInicio'] || row['Data'] || ''),
+                            tipo: row['Tipo'] || row['tipo'] || 'Outro',
+                            estado: row['Estado'] || row['estado'] || 'confirmada',
+                            observacoes: row['Observacoes'] || row['observacoes'] || ''
+                        })).filter(r => r.nome && r.dataInicio);
+                        setAusencias(aus);
+                        console.log('✅ Ausências carregadas:', aus.length, aus[0]);
+                    }
+
+                    // MapaHoras detalhe
+                    if(data.mapaHoras && Array.isArray(data.mapaHoras)) {
+                        const detalhe = data.mapaHoras.map(row => ({
+                            colaborador: row['Colaborador'] || row['colaborador'] || '',
+                            mes: row['Mes'] || row['mes'] || row['Mês'] || '',
+                            total: parseFloat(row['Total'] || row['total'] || 0) || 0
+                        })).filter(r => r.colaborador && r.mes && r.total > 0);
+                        setMapaHorasDetalhe(detalhe);
+                        // Também atualizar mapaHoras agregado
+                        const mapa = {};
+                        detalhe.forEach(r => {
+                            let mesAno = r.mes.toString();
+                            if(mesAno.includes('-')) { const p=mesAno.split('-'); mesAno=p[1]+'/'+p[0]; }
+                            if(!mapa[mesAno]) mapa[mesAno] = 0;
+                            mapa[mesAno] += Math.round(r.total * 60);
+                        });
+                        setMapaHoras(prev => ({...prev, ...mapa}));
+                        console.log('✅ MapaHoras detalhe carregado:', detalhe.length, 'linhas');
+                    }
+
+                    showMsg('✅ Configurações carregadas!', 'success');
+                } catch(err) {
+                    console.error('❌ Erro configurações:', err);
+                    showMsg('❌ Erro: ' + err.message, 'error');
+                } finally {
+                    setIsLoadingConfig(false);
+                }
+            };
             
             // Função para carregar dados do Power Automate
             const carregarDadosPowerAutomate = async () => {
@@ -356,6 +531,28 @@
                     
                     console.log('📥 Dados recebidos do Power Automate:', data);
                     
+                    // O Power Automate usa string(outputs(...)) no Compor — cada campo pode ser string JSON
+                    const parseField = (v) => {
+                        if(Array.isArray(v)) return v;
+                        if(typeof v === 'string') { try { return JSON.parse(v); } catch(e) { return []; } }
+                        return [];
+                    };
+                    
+                    // Normalizar campos (podem vir como string JSON do Compor)
+                    if(typeof data.producao === 'string') data.producao = parseField(data.producao);
+                    if(typeof data.perturbacoes === 'string') data.perturbacoes = parseField(data.perturbacoes);
+                    if(typeof data.encomendas === 'string') data.encomendas = parseField(data.encomendas);
+                    if(typeof data.encomendasProducao === 'string') data.encomendasProducao = parseField(data.encomendasProducao);
+                    if(typeof data.objetivosOperacao === 'string') data.objetivosOperacao = parseField(data.objetivosOperacao);
+                    if(typeof data.objetivosTipologia === 'string') data.objetivosTipologia = parseField(data.objetivosTipologia);
+                    if(typeof data.mapaHoras === 'string') data.mapaHoras = parseField(data.mapaHoras);
+                    if(typeof data.ausencias === 'string') data.ausencias = parseField(data.ausencias);
+                    console.log('📋 ausencias recebidas:', Array.isArray(data.ausencias) ? data.ausencias.length : 'não é array', data.ausencias?.[0]);
+
+                    // Variáveis locais — todos os setState's serão feitos num único batch no final
+                    let _ops = null, _pert = null, _enc = null, _encProd = null,
+                        _objs = null, _objsTip = null, _mapa = null;
+
                     // Processar Produção
                     if(data.producao && Array.isArray(data.producao)) {
                         const ops = data.producao.map(row => {
@@ -403,7 +600,7 @@
                                 mesAno: mesAno
                             };
                         }).filter(r => r.operacao);
-                        setRegistosOperacoes(ops);
+                        _ops = ops;
                         console.log('✅ Operações carregadas:', ops.length, 'Exemplo:', ops[0]);
                     }
                     
@@ -451,7 +648,7 @@
                                 mesAno: mesAno
                             };
                         }).filter(r => r.tipo);
-                        setRegistosPerturbacoes(pert);
+                        _pert = pert;
                         console.log('✅ Perturbações carregadas:', pert.length, 'Exemplo:', pert[0]);
                     }
                     
@@ -576,10 +773,8 @@
                             console.log('🔍 Última enc:', { caixa: last.caixa, mesAnoEntrega: last.mesAnoEntrega, mesAnoProducao: last.mesAnoProducao, mesAnoEmbalamento: last.mesAnoEmbalamento });
                         }
                         
-                        setEncomendas(enc);
+                        _enc = enc;
                     }
-                    
-                    // Processar Encomendas em Produção (pendentes)
                     if(data.encomendasProducao && Array.isArray(data.encomendasProducao)) {
                         console.log('🔍 Primeira encomenda produção raw:', data.encomendasProducao[0]);
                         
@@ -673,33 +868,20 @@
                         }
                         
                         // Adicionar pendentes faturadas E em stock ao array principal de encomendas
-                        setEncomendas(prev => {
-                            // Evitar duplicados: PO+POS é a chave única de uma encomenda
-                            const idsTerminadas = new Set(prev.map(e => String(e.po||'').trim()+'|'+String(e.pos||'').trim()));
-                            const novasFaturadas = pendFaturadas.filter(e => {
-                                const id = String(e.po||'').trim()+'|'+String(e.pos||'').trim();
-                                return !idsTerminadas.has(id);
-                            });
-                            const novosStock = pendStock.filter(e => {
-                                const id = String(e.po||'').trim()+'|'+String(e.pos||'').trim();
-                                return !idsTerminadas.has(id);
-                            });
-                            console.log('📋 Adicionando', novasFaturadas.length, 'pendentes faturadas +', novosStock.length, 'em stock ao array principal');
-                            if(pendFaturadas.length > novasFaturadas.length) {
-                                const dupl = pendFaturadas.filter(e => {
-                                    const id = String(e.po||'').trim()+'|'+String(e.pos||'').trim();
-                                    return idsTerminadas.has(id);
-                                });
-                                console.log('⚠️ Duplicadas faturadas (mesmo PO+POS já nas terminadas):', dupl.map(e => ({caixa:e.caixa, po:e.po, pos:e.pos, numFatura:e.numFatura})));
-                            }
-                            // Marcar como adicionadas (não-originais) para excluir do cálculo de qtd por caixa
-                            novasFaturadas.forEach(e => e._adicionada = true);
-                            novosStock.forEach(e => e._adicionada = true);
-                            return [...prev, ...novasFaturadas, ...novosStock];
+                        const idsTerminadas = new Set((_enc||[]).map(e => String(e.po||'').trim()+'|'+String(e.pos||'').trim()));
+                        const novasFaturadas = pendFaturadas.filter(e => {
+                            const id = String(e.po||'').trim()+'|'+String(e.pos||'').trim();
+                            return !idsTerminadas.has(id);
                         });
-                        
-                        // Guardar separadamente - só para cálculo de OEE
-                        setEncomendasProducao(encProd);
+                        const novosStock = pendStock.filter(e => {
+                            const id = String(e.po||'').trim()+'|'+String(e.pos||'').trim();
+                            return !idsTerminadas.has(id);
+                        });
+                        console.log('📋 Adicionando', novasFaturadas.length, 'pendentes faturadas +', novosStock.length, 'em stock ao array principal');
+                        novasFaturadas.forEach(e => e._adicionada = true);
+                        novosStock.forEach(e => e._adicionada = true);
+                        _enc = [...(_enc||[]), ...novasFaturadas, ...novosStock];
+                        _encProd = encProd;
                     }
                     
                     // Processar Objetivos por Operação
@@ -721,7 +903,7 @@
                                 if(mins > 0) objs[operacao] = mins;
                             }
                         });
-                        setObjetivos(prev => ({...prev, ...objs}));
+                        _objs = objs;
                         console.log('✅ Objetivos operação carregados:', Object.keys(objs).length, 'Exemplo:', Object.entries(objs).slice(0,3));
                     }
                     
@@ -743,7 +925,7 @@
                                 if(mins > 0) objsTip[tipologia] = mins;
                             }
                         });
-                        setObjetivosTipologia(prev => ({...prev, ...objsTip}));
+                        _objsTip = objsTip;
                         console.log('✅ Objetivos tipologia carregados:', Object.keys(objsTip).length, 'Exemplo:', Object.entries(objsTip).slice(0,3));
                     }
                     
@@ -765,11 +947,27 @@
                                 mapa[mesAno] += Math.round(total * 60); // horas para minutos
                             }
                         });
-                        setMapaHoras(prev => ({...prev, ...mapa}));
+                        _mapa = mapa;
                         console.log('✅ Mapa Horas carregado:', mapa);
                     }
                     
-                    setLastUpdate(new Date());
+                    // Processar Ausências
+                    // (carregadas pelo fluxo de Configurações separado)
+
+                    // Processar MapaHoras detalhe (por colaborador)
+                    // (carregado pelo fluxo de Configurações separado)
+
+                    // Um único flush → um único re-render do useMemo (OEE calcula com todos os dados)
+                    ReactDOM.unstable_batchedUpdates(() => {
+                        if(_ops)     setRegistosOperacoes(_ops);
+                        if(_pert)    setRegistosPerturbacoes(_pert);
+                        if(_enc)     setEncomendas(_enc);
+                        if(_encProd) setEncomendasProducao(_encProd);
+                        if(_objs)    setObjetivos(prev => ({...prev, ..._objs}));
+                        if(_objsTip) setObjetivosTipologia(prev => ({...prev, ..._objsTip}));
+                        if(_mapa)    setMapaHoras(prev => ({...prev, ..._mapa}));
+                        setLastUpdate(new Date());
+                    });
                     showMsg('✅ Dados carregados com sucesso!', 'success');
                     
                 } catch(err) {
@@ -792,11 +990,9 @@
             
             // Carregar dados automaticamente ao iniciar (se URL configurado)
             useEffect(() => {
-                console.log('🚀 App iniciada, URL:', urlPowerAutomate ? 'configurado' : 'vazio');
-                if(urlPowerAutomate) {
-                    console.log('🔄 A iniciar carregamento automático...');
-                    carregarDadosPowerAutomate();
-                }
+                console.log('🚀 App iniciada, URL produção:', urlPowerAutomate ? 'configurado' : 'vazio', '| URL configs:', urlConfiguracoes ? 'configurado' : 'vazio');
+                if(urlPowerAutomate) carregarDadosPowerAutomate();
+                if(urlConfiguracoes) carregarConfiguracoes();
             }, []);
             
             // Importar Registos Produção Évora (ficheiro com 2 folhas: Produção + Perturbações)
@@ -1053,7 +1249,6 @@
                         if(e.caixa && e.ecode) newMapCaixaEcode[e.caixa] = e.ecode;
                     });
                     setMapCaixaEcode(newMapCaixaEcode);
-                    localStorage.setItem('kpi_mapCaixaEcode', JSON.stringify(newMapCaixaEcode));
                     
                     // Debug - mostrar exemplo com valores
                     const comValor = todasEncomendas.filter(e => e.valor > 0);
@@ -1102,7 +1297,6 @@
                     
                     if(Object.keys(mapa).length > 0) {
                         setMapaHoras(prev => ({...prev, ...mapa}));
-                        localStorage.setItem('kpi_mapaHoras', JSON.stringify({...mapaHoras, ...mapa}));
                     }
                     
                     const resumo = Object.entries(mapa).map(([mes, mins]) => `${mes}: ${(mins/60).toFixed(0)}h`).join(', ');
@@ -1112,7 +1306,68 @@
                 ev.target.value = '';
             };
             
-            const importObjetivos = async (ev) => {
+            // Importar Configurações (ausências, colaboradores)
+            const importConfiguracoes = async (ev) => {
+                const file = ev.target.files[0]; if(!file) return;
+                showMsg('⏳ A processar configurações...','info');
+                try {
+                    const wb = await new Promise((res,rej) => {
+                        const reader = new FileReader();
+                        reader.onload = (e) => { try { res(XLSX.read(new Uint8Array(e.target.result),{type:'array'})); } catch(err){rej(err);} };
+                        reader.onerror = () => rej(new Error('Erro'));
+                        reader.readAsArrayBuffer(file);
+                    });
+
+                    // --- ConfigAusencias ---
+                    const sheetAus = wb.SheetNames.find(n => n.toLowerCase().includes('ausencia') || n.toLowerCase().includes('ausência'));
+                    console.log('📋 Sheets disponíveis:', wb.SheetNames, '| Sheet ausências:', sheetAus);
+                    if(sheetAus) {
+                        const dataAus = XLSX.utils.sheet_to_json(wb.Sheets[sheetAus], {defval:'', raw:true});
+                        console.log('🔍 Primeira ausência raw:', dataAus[0]);
+                        const excelSerialToDate = (serial) => {
+                            if(!serial) return '';
+                            if(typeof serial === 'number') {
+                                // Excel serial date: dias desde 1900-01-01
+                                const d = new Date((serial - 25569) * 86400 * 1000);
+                                return d.toISOString().split('T')[0];
+                            }
+                            const s = serial.toString().trim();
+                            if(s.includes('T')) return s.split('T')[0];
+                            if(/^\d{4}-\d{2}-\d{2}/.test(s)) return s.substring(0,10);
+                            if(s.includes('/')) { const p=s.split('/'); if(p.length===3) return p[2]+'-'+p[1].padStart(2,'0')+'-'+p[0].padStart(2,'0'); }
+                            return s;
+                        };
+                        const aus = dataAus.map(row => ({
+                            nome: (row['Nome']||row['nome']||'').toString().trim(),
+                            dataInicio: excelSerialToDate(row['DataInicio']||row['Data Inicio']||row['Data']||''),
+                            dataFim: excelSerialToDate(row['DataFim']||row['Data Fim']||row['DataInicio']||row['Data']||''),
+                            tipo: (row['Tipo']||row['tipo']||'Outro').toString().trim(),
+                            estado: (row['Estado']||row['estado']||'confirmada').toString().trim(),
+                            observacoes: (row['Observacoes']||row['Observações']||'').toString().trim()
+                        })).filter(r => r.nome && r.dataInicio);
+                        console.log('✅ Ausências processadas:', aus.length, '| Exemplo:', aus.slice(0,3));
+                        setAusencias(aus);
+                    }
+
+                    // --- MapaHoras detalhe (por colaborador) ---
+                    const sheetMH = wb.SheetNames.find(n => n.toLowerCase().includes('mapahoras') || n.toLowerCase().includes('mapa'));
+                    if(sheetMH) {
+                        const dataMH = XLSX.utils.sheet_to_json(wb.Sheets[sheetMH], {defval:'', raw:true});
+                        const detalhe = dataMH.map(row => ({
+                            colaborador: (row['Colaborador']||row['colaborador']||'').toString().trim(),
+                            mes: (row['Mes']||row['mes']||row['Mês']||'').toString().trim(),
+                            total: parseFloat(row['Total']||row['total']||0)||0
+                        })).filter(r => r.colaborador && r.mes && r.total > 0);
+                        setMapaHorasDetalhe(detalhe);
+                    }
+
+                    showMsg('✅ Configurações importadas com sucesso!','success');
+                } catch(err) { showMsg('❌ Erro: '+err.message,'error'); console.error(err); }
+                ev.target.value = '';
+            };
+
+
+                const importObjetivos = async (ev) => {
                 const file = ev.target.files[0]; if(!file) return;
                 showMsg('⏳ A processar objetivos...','info');
                 try {
@@ -1181,11 +1436,9 @@
                     // Guardar os que foram encontrados
                     if(Object.keys(objs).length > 0) {
                         setObjetivos(prev => ({...prev, ...objs}));
-                        localStorage.setItem('kpi_objetivos', JSON.stringify({...objetivos, ...objs}));
                     }
                     if(Object.keys(objsTipo).length > 0) {
                         setObjetivosTipologia(prev => ({...prev, ...objsTipo}));
-                        localStorage.setItem('kpi_objetivosTipologia', JSON.stringify({...objetivosTipologia, ...objsTipo}));
                     }
                     
                     const totalOps = Object.keys(objs).length;
@@ -1196,11 +1449,12 @@
             };
             
             useEffect(() => { 
-                try { 
-                    const s=localStorage.getItem('kpi_objetivos'); if(s) setObjetivos(JSON.parse(s)); 
-                    const st=localStorage.getItem('kpi_objetivosTipologia'); if(st) setObjetivosTipologia(JSON.parse(st));
-                    const sm=localStorage.getItem('kpi_mapCaixaEcode'); if(sm) setMapCaixaEcode(JSON.parse(sm));
-                    const mh=localStorage.getItem('kpi_mapaHoras'); if(mh) setMapaHoras(JSON.parse(mh));
+                try {
+
+
+
+
+
                 } catch(e){} 
             }, []);
             
@@ -2053,7 +2307,88 @@
                 const anosOps = registosOperacoes.map(r => getAnoFromMesAno(r.mesAno));
                 const anosUnicos = [...new Set([...anosEnc, ...anosOps])].filter(a => a && a >= '2026').sort().reverse();
                 
-                return { 
+                // Calcular evolução mensal por caixa+operação (para o separador Evolução)
+                // Usa TODOS os registos de operações (sem filtro de mês, mas com filtro de ano/tipologia)
+                const opsParaEvolucao = registosOperacoes.filter(r => {
+                    if(filtroTipologia && r.tipologia !== filtroTipologia) return false;
+                    if(filtroAno) {
+                        const ano = r.mesAno ? r.mesAno.split('/')[1] : '';
+                        if(ano !== filtroAno) return false;
+                    }
+                    // Aceitar registos sem artigo (ex: Transporte) usando caixa ou operação como fallback
+                    return r.operacao && r.mesAno;
+                });
+
+                // Agrupar por caixa → operação → mês
+                const evolucaoOperacoes = {};
+                opsParaEvolucao.forEach(r => {
+                    // Se não tem artigo específico, usar a operação como identificador (ex: Transporte)
+                    const caixa = (r.artigo || r.caixa || (r.tipologia === r.operacao ? r.operacao : r.tipologia) || 'Sem Caixa').replace(/\s+/g, ' ').trim();
+                    const op = r.operacao;
+                    const mes = r.mesAno;
+                    const chave = caixa + '|||' + op;
+                    if(!evolucaoOperacoes[chave]) evolucaoOperacoes[chave] = { caixa, operacao: op, meses: {} };
+                    if(!evolucaoOperacoes[chave].meses[mes]) evolucaoOperacoes[chave].meses[mes] = { tempoTotal: 0, count: 0 };
+                    evolucaoOperacoes[chave].meses[mes].tempoTotal += r.duracao || 0;
+                    evolucaoOperacoes[chave].meses[mes].count++;
+                });
+
+                // Para cada caixa+op, calcular T.Médio/cx por mês usando qtdPorCaixaMes
+                // Precisamos da quantidade por caixa por mês
+                const qtdPorCaixaMes = {};
+                todasEncParaOEE.forEach(enc => {
+                    const caixaRaw = enc.caixa || enc.ligacao || '';
+                    const caixa = caixaRaw.replace(/\s+/g, ' ').trim();
+                    const mesAno = enc._origem === 'stock'
+                        ? (enc.mesAnoProducao || enc.mesAnoEmbalamento || enc.mesAnoEntrega)
+                        : (enc.mesAnoEntrega || enc.mesAnoEmbalamento || enc.mesAnoProducao);
+                    if(!caixa || !mesAno) return;
+                    const key = caixa + '|||' + mesAno;
+                    if(!qtdPorCaixaMes[key]) qtdPorCaixaMes[key] = 0;
+                    qtdPorCaixaMes[key] += enc.quantidade || enc.qtdProduzida || enc.qtdEntregue || 1;
+                });
+
+                // Enriquecer evolucaoOperacoes com tempoMedio e racio por mês
+                Object.values(evolucaoOperacoes).forEach(item => {
+                    // Buscar objetivo para esta caixa+operação
+                    const opNorm2 = normalizarOperacao(item.operacao);
+                    const artigoNorm2 = normalizarNome(item.caixa);
+                    const hifenIdx2 = item.operacao.indexOf('-');
+                    let tempoObjItem = objetivos[item.operacao] || objetivos[opNorm2] || 0;
+                    if(!tempoObjItem && item.caixa && hifenIdx2 >= 0) {
+                        const suf = item.operacao.substring(hifenIdx2);
+                        const nEsp = item.caixa + suf;
+                        tempoObjItem = objetivos[nEsp] || objetivos[normalizarOperacao(nEsp)] || 0;
+                        if(!tempoObjItem) {
+                            const hifenIdx3 = item.operacao.indexOf('-', hifenIdx2+1);
+                            if(hifenIdx3 >= 0) {
+                                const suf2 = item.operacao.substring(hifenIdx3);
+                                const nEsp2 = item.caixa + suf2;
+                                tempoObjItem = objetivos[nEsp2] || objetivos[normalizarOperacao(nEsp2)] || 0;
+                            }
+                        }
+                    }
+                    if(!tempoObjItem) tempoObjItem = objetivosTipologia[item.caixa] || objetivosNorm[artigoNorm2] || 0;
+                    item.tempoObjetivo = tempoObjItem; // minutos
+
+                    Object.entries(item.meses).forEach(([mes, dados]) => {
+                        const qtdKey = item.caixa + '|||' + mes;
+                        const qtd = qtdPorCaixaMes[qtdKey] || 0;
+                        dados.qtd = qtd;
+                        // Se não há quantidade de encomendas (ex: Transporte), usar count de registos como base
+                        const base = qtd > 0 ? qtd : dados.count;
+                        dados.tempoMedioH = base > 0 ? parseFloat((dados.tempoTotal / base / 60).toFixed(3)) : null;
+                        dados.racio = (dados.tempoMedioH && tempoObjItem > 0) ? (tempoObjItem / (dados.tempoTotal / base)) * 100 : null;
+                    });
+                });
+
+                // Lista de meses ordenados para o eixo X
+                const mesesEvolucao = [...new Set(opsParaEvolucao.map(r => r.mesAno))].sort((a,b) => {
+                    const [ma,ya] = a.split('/'); const [mb,yb] = b.split('/');
+                    return (parseInt(ya)*100+parseInt(ma)) - (parseInt(yb)*100+parseInt(mb));
+                });
+
+                                return { 
                     totalEncomendas, encFaturadas: encFaturadas.length, encNaoFaturadas: encNaoFaturadas.length,
                     taxaFaturacao, valorTotal, valorFaturado, valorPorFaturar, valorPorLocalizacao,
                     totalFaturadasAnual, valorFaturadoAnual, totalEncAnual,
@@ -2062,9 +2397,339 @@
                     tempoTotalOps, numOperacoes, eficienciaGeral, eficienciaPorTipologia, performancePorCaixa,
                     tempoPerturbacoes, numPerturbacoes, perturbacoesPorTipo,
                     disponibilidade, performance, qualidade, oee, oeePorMes, eficienciaProdutiva,
-                    evolucaoMensal, mesesUnicos, tipologias, analiseArray, anosUnicos
+                    evolucaoMensal, mesesUnicos, tipologias, analiseArray, anosUnicos,
+                    evolucaoOperacoes, mesesEvolucao
                 };
             }, [encomendas, encomendasProducao, registosProducao, registosOperacoes, registosPerturbacoes, objetivos, objetivosTipologia, mapCaixaEcode, mapaHoras, filtroAno, filtroMes, filtroTipologia]);
+
+            const exportarPDF = async () => {
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+                const W = 210, H = 297, M = 12; // A4 margins
+                let y = M;
+
+                // Calcular últimos 3 meses com dados
+                const mesesDisp = (kpis.mesesUnicos || []).slice(-3);
+                const periodoLabel = mesesDisp.length > 0 ? mesesDisp[0] + ' a ' + mesesDisp[mesesDisp.length-1] : filtroAno || '2026';
+
+                // Helpers
+                const addHeader = (titulo, subtitulo) => {
+                    // Fundo escuro header
+                    doc.setFillColor(15, 23, 42);
+                    doc.rect(0, 0, W, 28, 'F');
+                    doc.setTextColor(255,255,255);
+                    doc.setFontSize(18); doc.setFont('helvetica','bold');
+                    doc.text('KPI Embaresa — Quadro de Indicadores', M, 11);
+                    doc.setFontSize(10); doc.setFont('helvetica','normal');
+                    doc.setTextColor(148,163,184);
+                    doc.text('Período: ' + periodoLabel + '  |  Gerado em: ' + new Date().toLocaleDateString('pt-PT'), M, 18);
+                    doc.text('Évora 2 — Sistema de Monitorização de Produção', M, 24);
+                    y = 34;
+                };
+
+                const addSectionTitle = (titulo, icon) => {
+                    if(y > H - 30) { doc.addPage(); y = M; }
+                    doc.setFillColor(30, 41, 59);
+                    doc.roundedRect(M, y, W - M*2, 8, 1, 1, 'F');
+                    doc.setTextColor(255,255,255);
+                    doc.setFontSize(10); doc.setFont('helvetica','bold');
+                    doc.text(icon + '  ' + titulo, M+3, y+5.5);
+                    y += 12;
+                };
+
+                const addKPIBox = (label, value, color, x, bw) => {
+                    const [r,g,b] = color;
+                    doc.setFillColor(r,g,b,0.15);
+                    doc.setDrawColor(r,g,b);
+                    doc.setLineWidth(0.3);
+                    doc.roundedRect(x, y, bw, 16, 2, 2, 'FD');
+                    doc.setTextColor(r,g,b);
+                    doc.setFontSize(14); doc.setFont('helvetica','bold');
+                    doc.text(String(value), x + bw/2, y+8, {align:'center'});
+                    doc.setTextColor(148,163,184);
+                    doc.setFontSize(7); doc.setFont('helvetica','normal');
+                    doc.text(label, x + bw/2, y+13, {align:'center'});
+                };
+
+                const addBarChart = (labels, values, maxVal, cor, x, cx, bh, title) => {
+                    if(y + bh + 20 > H - M) { doc.addPage(); y = M; }
+                    doc.setFontSize(8); doc.setFont('helvetica','bold');
+                    doc.setTextColor(200,200,200);
+                    doc.text(title, x, y+4);
+                    const chartY = y + 8;
+                    const barW = cx / (labels.length * 1.6);
+                    const gap = cx / labels.length;
+                    labels.forEach((lbl, i) => {
+                        const val = values[i] || 0;
+                        const barH = maxVal > 0 ? (val/maxVal) * bh : 0;
+                        const bx = x + i * gap + (gap - barW)/2;
+                        const by = chartY + bh - barH;
+                        const [r,g,b] = cor;
+                        doc.setFillColor(r,g,b);
+                        doc.rect(bx, by, barW, barH, 'F');
+                        // valor
+                        doc.setFontSize(6); doc.setFont('helvetica','bold');
+                        doc.setTextColor(220,220,220);
+                        if(barH > 4) doc.text(val > 0 ? val.toFixed(0)+'%' : '', bx + barW/2, by - 1, {align:'center'});
+                        // label
+                        doc.setFontSize(5.5); doc.setFont('helvetica','normal');
+                        doc.setTextColor(148,163,184);
+                        const shortLbl = lbl.length > 8 ? lbl.substring(0,8)+'.' : lbl;
+                        doc.text(shortLbl, bx + barW/2, chartY + bh + 4, {align:'center'});
+                    });
+                    // linha objetivo 100%
+                    const obj100Y = chartY + bh - (100/maxVal)*bh;
+                    if(obj100Y > chartY && obj100Y < chartY+bh) {
+                        doc.setDrawColor(34,197,94); doc.setLineWidth(0.4);
+                        doc.setLineDashPattern([1,1], 0);
+                        doc.line(x, obj100Y, x+cx, obj100Y);
+                        doc.setLineDashPattern([], 0);
+                        doc.setFontSize(5); doc.setTextColor(34,197,94);
+                        doc.text('100%', x+cx+1, obj100Y+1);
+                    }
+                    y = chartY + bh + 10;
+                };
+
+                const addLineChart = (labels, datasets, x, cx, ch, title) => {
+                    if(y + ch + 20 > H - M) { doc.addPage(); y = M; }
+                    doc.setFontSize(8); doc.setFont('helvetica','bold');
+                    doc.setTextColor(200,200,200);
+                    doc.text(title, x, y+4);
+                    const chartY = y + 8;
+                    const allVals = datasets.flatMap(d=>d.data).filter(v=>v!==null && v!==undefined);
+                    const maxVal = allVals.length > 0 ? Math.max(...allVals) * 1.1 : 1;
+                    const minVal = Math.min(0, ...(allVals.length > 0 ? allVals : [0]));
+                    const range = maxVal - minVal || 1;
+                    datasets.forEach(ds => {
+                        const pts = ds.data.map((v,i) => ({
+                            x: x + (i/(labels.length-1||1)) * cx,
+                            y: chartY + ch - ((( v ?? null) - minVal) / range) * ch
+                        }));
+                        const valid = pts.filter((_,i) => ds.data[i] !== null && ds.data[i] !== undefined);
+                        if(valid.length < 2) return;
+                        doc.setDrawColor(...ds.color);
+                        doc.setLineWidth(ds.dash ? 0.5 : 1);
+                        if(ds.dash) doc.setLineDashPattern([2,2], 0);
+                        else doc.setLineDashPattern([], 0);
+                        for(let i=0; i<valid.length-1; i++) {
+                            doc.line(valid[i].x, valid[i].y, valid[i+1].x, valid[i+1].y);
+                        }
+                        doc.setLineDashPattern([], 0);
+                        // pontos
+                        if(!ds.dash) {
+                            doc.setFillColor(...ds.color);
+                            valid.forEach(p => doc.circle(p.x, p.y, 0.8, 'F'));
+                        }
+                    });
+                    // eixo X labels
+                    doc.setFontSize(5.5); doc.setTextColor(148,163,184);
+                    labels.forEach((lbl,i) => {
+                        const px = x + (i/(labels.length-1||1)) * cx;
+                        doc.text(lbl, px, chartY+ch+4, {align:'center'});
+                    });
+                    // legenda
+                    let lx = x;
+                    datasets.forEach(ds => {
+                        doc.setFillColor(...ds.color);
+                        doc.rect(lx, chartY+ch+7, 6, 2, 'F');
+                        doc.setTextColor(180,180,180);
+                        doc.setFontSize(5.5);
+                        doc.text(ds.label, lx+8, chartY+ch+9);
+                        lx += 35;
+                    });
+                    y = chartY + ch + 16;
+                };
+
+                // ═══════════════════════════════════════
+                // PÁGINA 1 — KPIs + OEE + Perturbações
+                // ═══════════════════════════════════════
+                addHeader();
+
+                // KPIs resumo
+                addSectionTitle('Indicadores Chave', '📊');
+                const bw = (W - M*2 - 8) / 5;
+                addKPIBox('OEE', (kpis.oee||0).toFixed(0)+'%', [59,130,246], M, bw);
+                addKPIBox('Disponibilidade', (kpis.disponibilidade||0).toFixed(0)+'%', [34,197,94], M+bw+2, bw);
+                addKPIBox('Performance', (kpis.performance||0).toFixed(0)+'%', [245,158,11], M+bw*2+4, bw);
+                addKPIBox('Produzido', formatNumber(kpis.totalProduzido||0), [168,85,247], M+bw*3+6, bw);
+                addKPIBox('Em Stock', formatNumber(kpis.totalEncEmStock||0), [239,68,68], M+bw*4+8, bw);
+                y += 20;
+
+                // OEE mensal
+                if(kpis.oeePorMes && Object.keys(kpis.oeePorMes).length > 0) {
+                    addSectionTitle('OEE Mensal (%)', '⚙️');
+                    const mesesOEE = Object.keys(kpis.oeePorMes).sort().slice(-6);
+                    const valsOEE = mesesOEE.map(m => kpis.oeePorMes[m] ? parseFloat((kpis.oeePorMes[m].oee || 0).toFixed(1)) : 0);
+                    addBarChart(mesesOEE, valsOEE, Math.max(100, ...valsOEE)*1.1, [59,130,246], M, W-M*2, 35, '');
+                }
+
+                // Perturbações Top 5
+                addSectionTitle('Perturbações — Top 5', '⚠️');
+                const pertTop5 = Object.entries(kpis.perturbacoesPorTipo||{})
+                    .sort((a,b)=>b[1].tempo-a[1].tempo).slice(0,5);
+                if(pertTop5.length > 0) {
+                    const pertLabels = pertTop5.map(([t]) => t.substring(0,12));
+                    const pertVals = pertTop5.map(([,d]) => parseFloat((d.tempo/60).toFixed(1)));
+                    const maxPert = Math.max(...pertVals) * 1.2;
+                    const bwP = (W-M*2) / (pertLabels.length * 1.6);
+                    const gapP = (W-M*2) / pertLabels.length;
+                    if(y + 45 > H - M) { doc.addPage(); y = M; }
+                    const chartYP = y + 4;
+                    const bhP = 32;
+                    pertLabels.forEach((lbl, i) => {
+                        const val = pertVals[i];
+                        const barH = maxPert > 0 ? (val/maxPert)*bhP : 0;
+                        const bx = M + i*gapP + (gapP-bwP)/2;
+                        const by = chartYP + bhP - barH;
+                        doc.setFillColor(245,158,11);
+                        doc.rect(bx, by, bwP, barH, 'F');
+                        doc.setFontSize(6); doc.setTextColor(220,220,220); doc.setFont('helvetica','bold');
+                        if(barH > 4) doc.text(val+'h', bx+bwP/2, by-1, {align:'center'});
+                        doc.setFontSize(5); doc.setTextColor(148,163,184); doc.setFont('helvetica','normal');
+                        doc.text(lbl, bx+bwP/2, chartYP+bhP+4, {align:'center'});
+                    });
+                    y = chartYP + bhP + 12;
+                }
+
+                // ═══════════════════════════════════════
+                // PÁGINA 2 — Performance por Caixa
+                // ═══════════════════════════════════════
+                doc.addPage(); y = M;
+                doc.setFillColor(15,23,42); doc.rect(0,0,W,10,'F');
+                doc.setTextColor(148,163,184); doc.setFontSize(8); doc.setFont('helvetica','normal');
+                doc.text('KPI Embaresa  |  ' + periodoLabel, M, 7);
+                y = 14;
+
+                addSectionTitle('Performance por Caixa/Artigo', '📦');
+                const perfEntries = Object.entries(kpis.performancePorCaixa||{})
+                    .filter(([c,d])=>c!=='Sem Caixa'&&d.tempoReal>0&&d.performance>0)
+                    .sort((a,b)=>b[1].performance-a[1].performance)
+                    .slice(0,15);
+                if(perfEntries.length > 0) {
+                    const colW = [55, 22, 22, 22, 22, 25];
+                    const cols = ['Caixa','T.Real','T.Obj/cx','Qtd','T.Obj Total','Performance'];
+                    // Header tabela
+                    doc.setFillColor(30,41,59);
+                    doc.rect(M, y, W-M*2, 7, 'F');
+                    doc.setTextColor(148,163,184); doc.setFontSize(7); doc.setFont('helvetica','bold');
+                    let cx2 = M+2;
+                    cols.forEach((c,i) => { doc.text(c, cx2, y+5); cx2 += colW[i]; });
+                    y += 7;
+                    perfEntries.forEach(([caixa, d], idx) => {
+                        if(y > H-M) { doc.addPage(); y=M+10; }
+                        const bg = idx%2===0 ? [20,32,50] : [15,23,42];
+                        doc.setFillColor(...bg); doc.rect(M, y, W-M*2, 7, 'F');
+                        const perf = d.performance;
+                        const perfCor = perf>=100 ? [34,197,94] : perf>=80 ? [59,130,246] : perf>=60 ? [245,158,11] : [239,68,68];
+                        doc.setTextColor(220,220,220); doc.setFontSize(6.5); doc.setFont('helvetica','normal');
+                        let cx3 = M+2;
+                        const shortCaixa = caixa.length > 22 ? caixa.substring(0,22)+'.' : caixa;
+                        doc.text(shortCaixa, cx3, y+5); cx3+=colW[0];
+                        doc.text(minutosParaHoras(d.tempoReal), cx3, y+5); cx3+=colW[1];
+                        doc.text(d.tempoObjUnitario>0 ? minutosParaHoras(d.tempoObjUnitario) : 'N/A', cx3, y+5); cx3+=colW[2];
+                        doc.text(String(d.quantidade||0), cx3, y+5); cx3+=colW[3];
+                        doc.text(d.tempoObjUnitario>0 ? minutosParaHoras(d.tempoObjUnitario*(d.quantidade||0)) : 'N/A', cx3, y+5); cx3+=colW[4];
+                        doc.setTextColor(...perfCor); doc.setFont('helvetica','bold');
+                        doc.text(perf.toFixed(0)+'%', cx3+8, y+5);
+                        // mini barra de performance
+                        const barMaxW = 18;
+                        const barW2 = Math.min(barMaxW, (perf/150)*barMaxW);
+                        doc.setFillColor(...perfCor,0.3); doc.rect(cx3, y+2, barMaxW, 3, 'F');
+                        doc.setFillColor(...perfCor); doc.rect(cx3, y+2, barW2, 3, 'F');
+                        y += 7;
+                    });
+                    y += 6;
+                }
+
+                // ═══════════════════════════════════════
+                // PÁGINA 3 — Produtividade + Evolução
+                // ═══════════════════════════════════════
+                doc.addPage(); y = M;
+                doc.setFillColor(15,23,42); doc.rect(0,0,W,10,'F');
+                doc.setTextColor(148,163,184); doc.setFontSize(8); doc.setFont('helvetica','normal');
+                doc.text('KPI Embaresa  |  ' + periodoLabel, M, 7);
+                y = 14;
+
+                // Encomendas stock vs entregues
+                addSectionTitle('Encomendas — Stock vs Entregues', '📋');
+                const bw3 = (W-M*2-4)/2;
+                addKPIBox('Entregues', formatNumber(kpis.totalEncEntregues||0), [34,197,94], M, bw3);
+                addKPIBox('Em Stock', formatNumber(kpis.totalEncEmStock||0), [245,158,11], M+bw3+4, bw3);
+                y += 22;
+
+                // Produtividade por Tipologia
+                addSectionTitle('Produtividade por Tipologia', '📈');
+                const tipEntries = Object.entries(kpis.eficienciaPorTipologia||{})
+                    .filter(([,d])=>d.eficiencia>0)
+                    .sort((a,b)=>b[1].eficiencia-a[1].eficiencia);
+                if(tipEntries.length > 0) {
+                    const tipLabels = tipEntries.map(([t])=>t);
+                    const tipVals = tipEntries.map(([,d])=>parseFloat(d.eficiencia.toFixed(1)));
+                    addBarChart(tipLabels, tipVals, Math.max(120,...tipVals)*1.1, [168,85,247], M, W-M*2, 40, '');
+                }
+
+                // Evolução operações — melhor/pior
+                addSectionTitle('Evolução Operações — Tendência', '📉');
+                const mesesEvol = (kpis.mesesEvolucao||[]).slice(-3);
+                const getTend = (item) => {
+                    const vals = mesesEvol.map(m=>item.meses[m]?.tempoMedioH??null).filter(v=>v!==null);
+                    if(vals.length<2) return 'neutro';
+                    const diff = ((vals[vals.length-1]-vals[vals.length-2])/vals[vals.length-2])*100;
+                    return diff < -3 ? 'melhor' : diff > 3 ? 'pior' : 'neutro';
+                };
+                const evolEntries = Object.values(kpis.evolucaoOperacoes||{});
+                const melhorar2 = evolEntries.filter(i=>getTend(i)==='melhor');
+                const piorar2 = evolEntries.filter(i=>getTend(i)==='pior');
+
+                // Mini tabela melhorar
+                if(y + 50 > H-M) { doc.addPage(); y=M+10; }
+                doc.setFontSize(7.5); doc.setFont('helvetica','bold');
+                doc.setTextColor(34,197,94); doc.text('↓ A Melhorar (' + melhorar2.length + ')', M, y+5);
+                doc.setTextColor(239,68,68); doc.text('↑ A Piorar (' + piorar2.length + ')', M+90, y+5);
+                y += 9;
+                const maxRows = Math.min(8, Math.max(melhorar2.length, piorar2.length));
+                for(let i=0; i<maxRows; i++) {
+                    if(y > H-M-6) break;
+                    const bg = i%2===0 ? [20,32,50] : [15,23,42];
+                    doc.setFillColor(...bg); doc.rect(M, y, 82, 6, 'F');
+                    doc.setFillColor(...bg); doc.rect(M+90, y, 82, 6, 'F');
+                    if(melhorar2[i]) {
+                        const v = melhorar2[i];
+                        const vals = mesesEvol.map(m=>v.meses[m]?.tempoMedioH??null).filter(v2=>v2!==null);
+                        const diff = vals.length>=2 ? ((vals[vals.length-1]-vals[vals.length-2])/vals[vals.length-2]*100).toFixed(0) : '';
+                        doc.setTextColor(220,220,220); doc.setFontSize(6); doc.setFont('helvetica','normal');
+                        const nm = (v.caixa+' — '+v.operacao).substring(0,35);
+                        doc.text(nm, M+2, y+4);
+                        doc.setTextColor(34,197,94); doc.setFont('helvetica','bold');
+                        doc.text(diff ? diff+'%' : '', M+76, y+4);
+                    }
+                    if(piorar2[i]) {
+                        const v = piorar2[i];
+                        const vals = mesesEvol.map(m=>v.meses[m]?.tempoMedioH??null).filter(v2=>v2!==null);
+                        const diff = vals.length>=2 ? ((vals[vals.length-1]-vals[vals.length-2])/vals[vals.length-2]*100).toFixed(0) : '';
+                        doc.setTextColor(220,220,220); doc.setFontSize(6); doc.setFont('helvetica','normal');
+                        const nm = (v.caixa+' — '+v.operacao).substring(0,35);
+                        doc.text(nm, M+92, y+4);
+                        doc.setTextColor(239,68,68); doc.setFont('helvetica','bold');
+                        doc.text(diff ? '+'+diff+'%' : '', M+166, y+4);
+                    }
+                    y += 6;
+                }
+
+                // Rodapé em todas as páginas
+                const totalPages = doc.getNumberOfPages();
+                for(let p=1; p<=totalPages; p++) {
+                    doc.setPage(p);
+                    doc.setFillColor(15,23,42); doc.rect(0, H-8, W, 8, 'F');
+                    doc.setTextColor(100,116,139); doc.setFontSize(6.5); doc.setFont('helvetica','normal');
+                    doc.text('Embaresa PT — Sistema KPI', M, H-3);
+                    doc.text('Página ' + p + ' / ' + totalPages, W-M, H-3, {align:'right'});
+                }
+
+                doc.save('KPI_Embaresa_' + periodoLabel.replace(/\//g,'-') + '.pdf');
+                showMsg('✅ PDF exportado com sucesso!', 'success');
+            };
+
             
             useEffect(() => {
                 if(kpis.evolucaoMensal.length===0) return;
@@ -2166,33 +2831,7 @@
                 });
             }, [kpis.perturbacoesPorTipo, activeTab]);
             
-            const exportarPDF = async () => {
-                const { jsPDF } = window.jspdf;
-                const doc = new jsPDF('l','mm','a4');
-                doc.setFontSize(20); doc.setFont('helvetica','bold'); doc.text('Relatório de KPIs',14,20);
-                doc.setFontSize(10); doc.setFont('helvetica','normal'); doc.text('Gerado em: '+new Date().toLocaleDateString('pt-PT'),14,28);
-                if(filtroMes) doc.text('Período: '+filtroMes,14,34);
-                if(filtroTipologia) doc.text('Tipologia: '+filtroTipologia,100,34);
-                
-                doc.autoTable({ startY:45, head:[['Indicador','Valor','Meta']], body:[
-                    ['Taxa de Conclusão',kpis.taxaConclusao.toFixed(1)+'%','90%'],
-                    ['Taxa de Faturação',kpis.taxaFaturacao.toFixed(1)+'%','100%'],
-                    ['OEE',kpis.oee.toFixed(1)+'%','85%'],
-                    ['Eficiência Geral',kpis.eficienciaGeral.toFixed(1)+'%','100%'],
-                    ['Eficiência Produtiva',kpis.eficienciaProdutiva.toFixed(1)+'%','100%'],
-                    ['Lead Time Médio',kpis.leadTimeMedia.toFixed(1)+' dias','< 7 dias'],
-                    ['Taxa de Atraso',kpis.taxaAtraso.toFixed(1)+'%','< 5%']
-                ], styles:{fontSize:9}, headStyles:{fillColor:[59,130,246]} });
-                
-                const y = doc.lastAutoTable.finalY + 15;
-                doc.autoTable({ startY:y, head:[['Descrição','Valor']], body:[
-                    ['Valor Faturado',formatCurrency(kpis.valorFaturado)],
-                    ['Valor Pendente',formatCurrency(kpis.valorPendente)]
-                ], styles:{fontSize:9}, headStyles:{fillColor:[16,185,129]} });
-                
-                doc.save('Relatorio_KPIs_'+new Date().toLocaleDateString('pt-PT').replace(/\//g,'-')+'.pdf');
-                showMsg('✅ PDF exportado!','success');
-            };
+
             
             const temDados = encomendas.length>0 || registosProducao.length>0 || registosOperacoes.length>0;
             
@@ -2205,8 +2844,8 @@
                             e('p',null, lastUpdate ? 'Última atualização: ' + lastUpdate.toLocaleString('pt-PT') : 'Indicadores de Produção e Encomendas')
                         )
                     ),
-                    e('div',{style:{display:'flex',gap:'12px',alignItems:'center'}},
-                        e('button',{className:'btn btn-primary',onClick:carregarDadosPowerAutomate,disabled:isLoading||!urlPowerAutomate,style:{background:isLoading?'#64748b':!urlPowerAutomate?'#475569':''}},
+                    e('div',{className:'header-right',style:{display:'flex',gap:'12px',alignItems:'center'}},
+                        e('button',{className:'btn btn-primary',onClick:()=>{ carregarDadosPowerAutomate(); if(urlConfiguracoes) carregarConfiguracoes(); },disabled:isLoading||!urlPowerAutomate,style:{background:isLoading?'#64748b':!urlPowerAutomate?'#475569':''}},
                             isLoading ? '⏳ A carregar...' : '🔄 Atualizar'
                         ),
                         e('button',{className:'btn btn-secondary',onClick:()=>setActiveTab('importar')},'📥 Importar'),
@@ -2223,22 +2862,24 @@
                     ),
                     e('div',{style:{display:'grid',gap:'16px'}},
                         e('div',null,
-                            e('label',{style:{display:'block',marginBottom:'6px',fontSize:'13px',color:'var(--text-secondary)'}},'🔗 URL do Fluxo Power Automate:'),
-                            e('input',{type:'text',value:urlPowerAutomate,onChange:ev=>setUrlPowerAutomate(ev.target.value),placeholder:'https://prod-XX.westeurope.logic.azure.com/...',style:{width:'100%',padding:'10px 14px',borderRadius:'var(--radius-sm)',background:'var(--bg-primary)',border:'1px solid var(--border-color)',color:'var(--text-primary)',fontSize:'13px'}})
+                            e('label',{style:{display:'block',marginBottom:'6px',fontSize:'13px',color:'var(--text-secondary)'}},'🔗 Fluxo 1 — Produção (producao, encomendas, perturbações, objetivos, mapaHoras):'),
+                            e('input',{type:'text',value:urlPowerAutomate,onChange:ev=>setUrlPowerAutomate(ev.target.value),placeholder:'https://...powerautomate.com/...',style:{width:'100%',padding:'10px 14px',borderRadius:'var(--radius-sm)',background:'var(--bg-primary)',border:'1px solid var(--border-color)',color:'var(--text-primary)',fontSize:'13px'}})
                         ),
-                        urlPowerAutomate && e('div',{style:{display:'flex',gap:'12px'}},
-                            e('button',{className:'btn btn-primary',onClick:carregarDadosPowerAutomate,disabled:isLoading},
-                                isLoading ? '⏳ A testar...' : '🧪 Testar Ligação'
+                        e('div',null,
+                            e('label',{style:{display:'block',marginBottom:'6px',fontSize:'13px',color:'var(--text-secondary)'}},'🏥 Fluxo 2 — Configurações (ausencias, mapaHoras por colaborador):'),
+                            e('input',{type:'text',value:urlConfiguracoes,onChange:ev=>setUrlConfiguracoes(ev.target.value),placeholder:'https://...powerautomate.com/... (fluxo separado)',style:{width:'100%',padding:'10px 14px',borderRadius:'var(--radius-sm)',background:'var(--bg-primary)',border:'1px solid var(--border-color)',color:'var(--text-primary)',fontSize:'13px'}})
+                        ),
+                        e('div',{style:{display:'flex',gap:'12px'}},
+                            urlPowerAutomate && e('button',{className:'btn btn-primary',onClick:carregarDadosPowerAutomate,disabled:isLoading},
+                                isLoading ? '⏳ A testar...' : '🧪 Testar Fluxo 1'
+                            ),
+                            urlConfiguracoes && e('button',{className:'btn btn-secondary',onClick:carregarConfiguracoes,disabled:isLoadingConfig},
+                                isLoadingConfig ? '⏳ A testar...' : '🧪 Testar Fluxo 2'
                             )
                         ),
                         e('div',{style:{padding:'12px',background:'var(--accent-blue-soft)',borderRadius:'var(--radius-sm)',fontSize:'12px',color:'var(--text-secondary)'}},
-                            e('strong',{style:{color:'var(--accent-blue)'}},'ℹ️ Como configurar: '),
-                            e('ol',{style:{margin:'8px 0 0 16px'}},
-                                e('li',null,'Cria um fluxo no Power Automate com trigger HTTP'),
-                                e('li',null,'Adiciona ações para ler os ficheiros Excel'),
-                                e('li',null,'Retorna JSON com: producao, perturbacoes, encomendas, objetivosOperacao, objetivosTipologia, mapaHoras'),
-                                e('li',null,'Cola o URL HTTP POST aqui')
-                            )
+                            e('strong',{style:{color:'var(--accent-blue)'}},'ℹ️ Dois fluxos separados: '),
+                            'Fluxo 1 carrega os dados de produção ao iniciar. Fluxo 2 carrega ausências/absentismo apenas quando abres esse separador.'
                         ),
                         e('div',{style:{padding:'12px',background:'var(--accent-green-soft)',borderRadius:'var(--radius-sm)',fontSize:'12px'}},
                             e('strong',{style:{color:'var(--accent-green)'}},'📱 Instalar como App: '),
@@ -2253,7 +2894,14 @@
                     e('button',{className:`tab ${activeTab==='perturbacoes'?'active':''}`,onClick:()=>setActiveTab('perturbacoes')},'⚠️ Perturbações'),
                     e('button',{className:`tab ${activeTab==='produtividade'?'active':''}`,onClick:()=>setActiveTab('produtividade')},'📈 Produtividade'),
                     e('button',{className:`tab ${activeTab==='oee'?'active':''}`,onClick:()=>setActiveTab('oee')},'⚙️ OEE'),
-                    e('button',{className:`tab ${activeTab==='detalhes'?'active':''}`,onClick:()=>setActiveTab('detalhes')},'📋 Detalhes')
+                    e('button',{className:`tab ${activeTab==='detalhes'?'active':''}`,onClick:()=>setActiveTab('detalhes')},'📋 Detalhes'),
+                    e('button',{className:`tab ${activeTab==='evolucao'?'active':''}`,onClick:()=>setActiveTab('evolucao')},'📉 Evolução'),
+                    e('button',{className:`tab ${activeTab==='absentismo'?'active':''}`,onClick:()=>setActiveTab('absentismo')},'🏥 Absentismo'),
+                    temDados && e('button',{
+                        className:'btn btn-secondary',
+                        onClick: exportarPDF,
+                        style:{marginLeft:'auto', fontSize:'12px', padding:'6px 14px', display:'flex', alignItems:'center', gap:'6px'}
+                    }, '🖨️ Exportar PDF')
                 ),
                 
                 temDados && activeTab!=='importar' && e('div',{className:'filter-bar'},
@@ -2309,7 +2957,7 @@
                     // Importação manual
                     e('div',{className:'section'},
                         e('h3',{className:'section-title',style:{marginBottom:'20px'}},'📁 Importar Ficheiros Excel (manual)'),
-                        e('div',{className:'kpi-grid'},
+                        e('div',{className:'kpi-grid upload-grid'},
                             e('label',{className:'upload-zone',style:{gridColumn:'span 2',background:'linear-gradient(135deg, var(--accent-blue-soft), var(--accent-purple-soft))'}},
                                 e('input',{type:'file',accept:'.xlsx,.xls',onChange:importRegistosProducao}),
                                 e('div',{className:'upload-icon'},'📊'),
@@ -2343,6 +2991,12 @@
                                 e('div',{className:'upload-icon'},'⏰'),
                                 e('div',{style:{fontWeight:'600',marginBottom:'8px'}},'Mapa de Horas (Tempo Disponível)'),
                                 e('div',{style:{fontSize:'12px',color:'var(--text-muted)'}},Object.keys(mapaHoras).length>0?`✅ ${Object.keys(mapaHoras).length} meses carregados`:'Ficheiro Configurações App Produção')
+                            ),
+                            e('label',{className:'upload-zone',style:{background:'linear-gradient(135deg,rgba(168,85,247,0.12),rgba(99,102,241,0.12))'}},
+                                e('input',{type:'file',accept:'.xlsx,.xls',onChange:importConfiguracoes}),
+                                e('div',{className:'upload-icon'},'🏥'),
+                                e('div',{style:{fontWeight:'600',marginBottom:'8px'}},'Configurações (Ausências)'),
+                                e('div',{style:{fontSize:'12px',color:'var(--text-muted)'}},ausencias.length>0?`✅ ${ausencias.length} registos de ausência`:'Configuracoes_App_Producao.xlsx')
                             )
                         )
                     )
@@ -2750,7 +3404,7 @@
                             e('h3',{className:'section-title',style:{marginBottom:'16px'}},'📊 Performance por Caixa/Artigo'),
                             e('table',{className:'data-table'},
                                 e('thead',null, e('tr',null, e('th',null,'Caixa/Artigo'), e('th',null,'Tempo Real'), e('th',null,'T.Obj/Cx'), e('th',null,'Qtd'), e('th',null,'T.Obj Total'), e('th',null,'Performance'))),
-                                e('tbody',null, Object.entries(kpis.performancePorCaixa).filter(([c,d])=>c!=='Sem Caixa'&&d.tempoReal>0).sort((a,b)=>b[1].tempoReal-a[1].tempoReal).slice(0,25).map(([caixa,d])=>
+                                e('tbody',null, Object.entries(kpis.performancePorCaixa).filter(([c,d])=>c!=='Sem Caixa'&&d.tempoReal>0).sort((a,b)=>b[1].performance-a[1].performance).slice(0,25).map(([caixa,d])=>
                                     e('tr',{key:caixa}, 
                                         e('td',null,e('strong',null,caixa)), 
                                         e('td',null,minutosParaHoras(d.tempoReal)), 
@@ -2835,11 +3489,480 @@
                     )
                 ),
                 
-                msg && e('div',{className:`msg-toast ${msgType}`},msg)
+                activeTab==='evolucao' && (!registosOperacoes.length ?
+                    e('div',{className:'section'}, e('div',{className:'empty-state'}, e('div',{className:'empty-state-icon'},'📉'), e('div',{className:'empty-state-title'},'Sem dados de operações'), e('div',{className:'empty-state-text'},'Importe os Registos de Produção para ver a evolução.'))) :
+                    e('div',null,
+                        e('div',{className:'section'},
+                            e('h3',{className:'section-title',style:{marginBottom:'16px'}},'📉 Evolução Mensal por Caixa / Operação'),
+                            // Agrupar por caixa e calcular tendência
+                            (() => {
+                                const porCaixa = {};
+                                Object.entries(kpis.evolucaoOperacoes || {}).forEach(([chave, item]) => {
+                                    const c = item.caixa;
+                                    if(!porCaixa[c]) porCaixa[c] = [];
+                                    porCaixa[c].push({chave, item});
+                                });
+                                const meses = kpis.mesesEvolucao || [];
+                                const cores = ['#3b82f6','#f59e0b','#a855f7','#06b6d4','#f43f5e','#84cc16'];
+
+                                // Calcular tendência: comparar últimos 2 meses com dados
+                                const getTendencia = (item) => {
+                                    const vals = meses.map(m => item.meses[m]?.tempoMedioH ?? null).filter(v => v !== null);
+                                    if(vals.length < 2) return 'neutro';
+                                    const ultimo = vals[vals.length-1];
+                                    const penultimo = vals[vals.length-2];
+                                    const diff = ((ultimo - penultimo) / penultimo) * 100;
+                                    if(diff < -3) return 'melhor';   // desceu >3% → melhor
+                                    if(diff > 3) return 'pior';      // subiu >3% → pior
+                                    return 'neutro';
+                                };
+
+                                // Resumo global no topo
+                                const todasOps = Object.values(kpis.evolucaoOperacoes || {});
+                                const melhorar = todasOps.filter(i => getTendencia(i) === 'melhor').length;
+                                const piorar = todasOps.filter(i => getTendencia(i) === 'pior').length;
+                                const neutro = todasOps.filter(i => getTendencia(i) === 'neutro').length;
+
+                                return [
+                                    // Resumo topo
+                                    e('div',{key:'resumo', style:{display:'flex', gap:'12px', marginBottom:'24px', flexWrap:'wrap'}},
+                                        e('div',{style:{display:'flex', alignItems:'center', gap:'10px', padding:'12px 20px', background:'rgba(34,197,94,0.1)', border:'1px solid rgba(34,197,94,0.3)', borderRadius:'var(--radius-sm)'}},
+                                            e('span',{style:{fontSize:'24px', fontWeight:'700', color:'#22c55e'}}, melhorar),
+                                            e('div',null,
+                                                e('div',{style:{fontSize:'12px', color:'#22c55e', fontWeight:'600'}},'↓ A MELHORAR'),
+                                                e('div',{style:{fontSize:'11px', color:'var(--text-muted)'}},'T. Médio desceu >3%')
+                                            )
+                                        ),
+                                        e('div',{style:{display:'flex', alignItems:'center', gap:'10px', padding:'12px 20px', background:'rgba(239,68,68,0.1)', border:'1px solid rgba(239,68,68,0.3)', borderRadius:'var(--radius-sm)'}},
+                                            e('span',{style:{fontSize:'24px', fontWeight:'700', color:'#ef4444'}}, piorar),
+                                            e('div',null,
+                                                e('div',{style:{fontSize:'12px', color:'#ef4444', fontWeight:'600'}},'↑ A PIORAR'),
+                                                e('div',{style:{fontSize:'11px', color:'var(--text-muted)'}},'T. Médio subiu >3%')
+                                            )
+                                        ),
+                                        e('div',{style:{display:'flex', alignItems:'center', gap:'10px', padding:'12px 20px', background:'rgba(148,163,184,0.1)', border:'1px solid rgba(148,163,184,0.2)', borderRadius:'var(--radius-sm)'}},
+                                            e('span',{style:{fontSize:'24px', fontWeight:'700', color:'#94a3b8'}}, neutro),
+                                            e('div',null,
+                                                e('div',{style:{fontSize:'12px', color:'#94a3b8', fontWeight:'600'}},'→ ESTÁVEL'),
+                                                e('div',{style:{fontSize:'11px', color:'var(--text-muted)'}},'Variação ≤3%')
+                                            )
+                                        ),
+                                        e('div',{style:{fontSize:'11px', color:'var(--text-muted)', alignSelf:'center', marginLeft:'8px'}},'Comparação últimos 2 meses com dados')
+                                    ),
+                                    // Blocos por caixa
+                                    ...Object.entries(porCaixa).sort((a,b)=>a[0].localeCompare(b[0],'pt')).map(([caixa, ops]) => {
+                                        // Tendência da caixa = pior das operações
+                                        const tendsCaixa = ops.map(({item}) => getTendencia(item));
+                                        const tendCaixa = tendsCaixa.includes('pior') ? 'pior' : tendsCaixa.includes('melhor') ? 'melhor' : 'neutro';
+                                        const borderCor = tendCaixa === 'melhor' ? 'rgba(34,197,94,0.4)' : tendCaixa === 'pior' ? 'rgba(239,68,68,0.4)' : 'var(--border-color)';
+                                        const iconCaixa = tendCaixa === 'melhor' ? '📉' : tendCaixa === 'pior' ? '📈' : '📦';
+
+                                        // Se todas as ops desta caixa têm o mesmo nome que a caixa (Transporte), mostrar a operação
+                                        const caixaLabel = ops.length === 1 && ops[0].item.operacao.toLowerCase().includes(caixa.toLowerCase()) 
+                                            ? ops[0].item.operacao : caixa;
+                                        return e('div',{key:caixa, style:{marginBottom:'28px', background:'var(--bg-card)', borderRadius:'var(--radius)', padding:'20px', border:`1px solid ${borderCor}`}},
+                                            // Caixa header
+                                            e('div',{style:{display:'flex', alignItems:'center', gap:'10px', marginBottom:'16px', paddingBottom:'12px', borderBottom:'1px solid var(--border-color)'}},
+                                                e('span',{style:{fontSize:'18px'}}, iconCaixa),
+                                                e('strong',{style:{fontSize:'16px', color:'var(--text-primary)'}}, caixaLabel),
+                                                e('span',{style:{
+                                                    fontSize:'11px', fontWeight:'600', padding:'3px 10px', borderRadius:'20px', marginLeft:'8px',
+                                                    background: tendCaixa==='melhor' ? 'rgba(34,197,94,0.15)' : tendCaixa==='pior' ? 'rgba(239,68,68,0.15)' : 'rgba(148,163,184,0.15)',
+                                                    color: tendCaixa==='melhor' ? '#22c55e' : tendCaixa==='pior' ? '#ef4444' : '#94a3b8'
+                                                }}, tendCaixa==='melhor' ? '↓ A melhorar' : tendCaixa==='pior' ? '↑ A piorar' : '→ Estável')
+                                            ),
+                                            // Grid de gráficos das operações desta caixa
+                                            e('div',{style:{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(380px, 1fr))', gap:'16px'}},
+                                                ops.map(({chave, item}, opIdx) => {
+                                                    const cor = cores[opIdx % cores.length];
+                                                    const tempoMedioData = meses.map(m => item.meses[m] && item.meses[m].tempoMedioH !== null ? parseFloat(item.meses[m].tempoMedioH.toFixed(2)) : null);
+                                                    const objH = item.tempoObjetivo > 0 ? parseFloat((item.tempoObjetivo/60).toFixed(2)) : null;
+                                                    const objLine = meses.map(() => objH);
+                                                    const temDados = tempoMedioData.some(v => v !== null);
+                                                    if(!temDados) return null;
+                                                    const tend = getTendencia(item);
+                                                    const tendIcon = tend==='melhor' ? ' ↓' : tend==='pior' ? ' ↑' : '';
+                                                    const tendCor = tend==='melhor' ? '#22c55e' : tend==='pior' ? '#ef4444' : '#94a3b8';
+
+                                                    return e('div',{key:chave, style:{background:'var(--bg-primary)', borderRadius:'var(--radius-sm)', padding:'14px', borderLeft:`3px solid ${tendCor}`}},
+                                                        e('div',{style:{marginBottom:'10px', display:'flex', alignItems:'center', justifyContent:'space-between'}},
+                                                            e('div',{style:{display:'flex', alignItems:'center', gap:'8px'}},
+                                                                e('div',{style:{width:'10px', height:'10px', borderRadius:'50%', background:cor, flexShrink:0}}),
+                                                                e('span',{style:{fontSize:'12px', color:'var(--text-secondary)', fontWeight:'500'}}, item.operacao)
+                                                            ),
+                                                            e('span',{style:{fontSize:'13px', fontWeight:'700', color:tendCor}}, tendIcon || '→')
+                                                        ),
+                                                    e('div',{style:{position:'relative', height:'180px'}},
+                                                        e('canvas',{
+                                                            ref: (canvas) => {
+                                                                if(!canvas) return;
+                                                                if(canvas._chartInstance) canvas._chartInstance.destroy();
+                                                                canvas._chartInstance = new Chart(canvas, {
+                                                                    type: 'line',
+                                                                    data: {
+                                                                        labels: meses,
+                                                                        datasets: [
+                                                                            {
+                                                                                label: 'T. Médio/cx (h)',
+                                                                                data: tempoMedioData,
+                                                                                borderColor: cor,
+                                                                                borderWidth: 2.5,
+                                                                                pointRadius: 4,
+                                                                                pointHoverRadius: 6,
+                                                                                fill: false,
+                                                                                tension: 0.3,
+                                                                                spanGaps: true
+                                                                            },
+                                                                            ...(objH ? [{
+                                                                                label: 'Objetivo: ' + objH + 'h',
+                                                                                data: objLine,
+                                                                                borderColor: '#22c55e',
+                                                                                borderWidth: 2,
+                                                                                borderDash: [8,4],
+                                                                                pointRadius: 0,
+                                                                                fill: false,
+                                                                                tension: 0,
+                                                                                spanGaps: true
+                                                                            }] : [])
+                                                                        ]
+                                                                    },
+                                                                    options: {
+                                                                        responsive: true,
+                                                                        maintainAspectRatio: false,
+                                                                        interaction: { mode:'index', intersect:false },
+                                                                        plugins: {
+                                                                            legend: { labels: { color:'#94a3b8', font:{size:10}, boxWidth:16, padding:8 } },
+                                                                            tooltip: { callbacks: {
+                                                                                label: (ctx) => ' ' + ctx.dataset.label + ': ' + (ctx.raw !== null ? ctx.raw+'h' : 'N/A')
+                                                                            }}
+                                                                        },
+                                                                        scales: {
+                                                                            x: { ticks:{ color:'#94a3b8', font:{size:9} }, grid:{ color:'rgba(148,163,184,0.06)' } },
+                                                                            y: { ticks:{ color:'#94a3b8', font:{size:9}, callback: v=>parseFloat(v.toFixed(2))+'h' }, grid:{ color:'rgba(148,163,184,0.06)' } }
+                                                                        }
+                                                                    }
+                                                                });
+                                                            }
+                                                        })
+                                                    )
+                                                );
+                                            }).filter(Boolean)
+                                        )
+                                    );
+                                })
+                                ];
+                            })()
+                        )
+                    )
+                ),
+                
+                activeTab==='absentismo' && (() => {
+                    // ---- Cálculo de absentismo ----
+                    const HORAS_DIA = 8;
+                    const TIPOS_ABSENTISMO = ['Falta', 'Baixa', 'Acidente']; // férias NÃO contam para taxa
+
+                    // Normalizar tipo
+                    const normTipo = (t) => {
+                        const s = (t||'').toString().trim();
+                        const sl = s.toLowerCase();
+                        if(sl === 'ferias' || sl === 'férias') return 'Férias';
+                        if(sl === 'falta') return 'Falta';
+                        if(sl === 'baixa' || sl.includes('baixa')) return 'Baixa';
+                        if(sl.includes('acidente')) return 'Acidente';
+                        return s || 'Outro';
+                    };
+
+                    // Dias úteis entre duas datas (excl. fins de semana)
+                    const diasUteis = (inicio, fim) => {
+                        let count = 0;
+                        const d = new Date(inicio);
+                        const f = new Date(fim);
+                        while(d <= f) {
+                            const dow = d.getDay();
+                            if(dow !== 0 && dow !== 6) count++;
+                            d.setDate(d.getDate()+1);
+                        }
+                        return count;
+                    };
+
+                    // Expandir ausências para lista de registos com mes
+                    const ausExpandidas = ausencias.map(a => {
+                        const tipo = normTipo(a.tipo);
+                        const ini = a.dataInicio ? new Date(a.dataInicio) : null;
+                        const fim = a.dataFim && a.dataFim !== a.dataInicio ? new Date(a.dataFim) : ini;
+                        if(!ini || isNaN(ini)) return null;
+                        const dias = diasUteis(ini, fim||ini);
+                        const mes = String(ini.getMonth()+1).padStart(2,'0') + '/' + ini.getFullYear();
+                        return { ...a, tipo, dias, mes, horas: dias * HORAS_DIA };
+                    }).filter(Boolean);
+
+                    // Filtrar por ano/mês selecionado
+                    const ausFiltradas = ausExpandidas.filter(a => {
+                        const [mm, yyyy] = a.mes.split('/');
+                        if(filtroAno && yyyy !== filtroAno) return false;
+                        if(filtroMes && a.mes !== filtroMes) return false;
+                        return true;
+                    });
+
+                    // Horas previstas por colaborador no período (do mapaHorasDetalhe)
+                    const horasPrevistosPorColab = {};
+                    mapaHorasDetalhe.forEach(r => {
+                        let mesAno = r.mes.toString();
+                        if(mesAno.includes('-')) { const p=mesAno.split('-'); mesAno=p[1]+'/'+p[0]; }
+                        const [mm, yyyy] = mesAno.split('/');
+                        if(filtroAno && yyyy !== filtroAno) return;
+                        if(filtroMes && mesAno !== filtroMes) return;
+                        if(!horasPrevistosPorColab[r.colaborador]) horasPrevistosPorColab[r.colaborador] = 0;
+                        horasPrevistosPorColab[r.colaborador] += r.total;
+                    });
+                    // Fallback: usar mapaHoras agregado (minutos → horas) se não houver detalhe
+                    let totalHorasPrevistas = Object.values(horasPrevistosPorColab).reduce((s,v)=>s+v,0);
+                    if(totalHorasPrevistas === 0 && Object.keys(mapaHoras).length > 0) {
+                        const totalMinutos = Object.entries(mapaHoras).filter(([m]) => {
+                            if(!filtroAno) return true;
+                            if(filtroMes) return m === filtroMes;
+                            return m.endsWith('/' + filtroAno);
+                        }).reduce((s,[,v]) => s + v, 0);
+                        totalHorasPrevistas = totalMinutos / 60;
+                    }
+
+                    // Ausências que contam para taxa (excluindo férias)
+                    const ausAbsentismo = ausFiltradas.filter(a => TIPOS_ABSENTISMO.includes(a.tipo));
+                    const totalHorasAusentes = ausAbsentismo.reduce((s,a)=>s+a.horas,0);
+                    const taxaAbsentismo = totalHorasPrevistas > 0 ? (totalHorasAusentes / totalHorasPrevistas * 100) : 0;
+
+                    // Por tipo
+                    const porTipo = {};
+                    ausFiltradas.forEach(a => {
+                        if(!porTipo[a.tipo]) porTipo[a.tipo] = { dias:0, horas:0, ocorrencias:0 };
+                        porTipo[a.tipo].dias += a.dias;
+                        porTipo[a.tipo].horas += a.horas;
+                        porTipo[a.tipo].ocorrencias++;
+                    });
+
+                    // Por colaborador (absentismo real)
+                    const porColab = {};
+                    ausAbsentismo.forEach(a => {
+                        if(!porColab[a.nome]) porColab[a.nome] = { dias:0, horas:0, ocorrencias:0, tipos:{} };
+                        porColab[a.nome].dias += a.dias;
+                        porColab[a.nome].horas += a.horas;
+                        porColab[a.nome].ocorrencias++;
+                        porColab[a.nome].tipos[a.tipo] = (porColab[a.nome].tipos[a.tipo]||0) + a.dias;
+                    });
+                    // Adicionar colaboradores sem ausências
+                    Object.keys(horasPrevistosPorColab).forEach(c => {
+                        if(!porColab[c]) porColab[c] = { dias:0, horas:0, ocorrencias:0, tipos:{} };
+                        porColab[c].horasPrevistas = horasPrevistosPorColab[c];
+                        porColab[c].taxa = horasPrevistosPorColab[c] > 0 ? (porColab[c].horas / horasPrevistosPorColab[c] * 100) : 0;
+                    });
+                    const colabOrdenados = Object.entries(porColab).sort((a,b)=>b[1].dias-a[1].dias);
+
+                    // Evolução mensal
+                    const evMensal = {};
+                    ausExpandidas.forEach(a => {
+                        if(filtroAno && !a.mes.endsWith(filtroAno)) return;
+                        if(!evMensal[a.mes]) evMensal[a.mes] = { ferias:0, falta:0, baixa:0, outro:0, previstas:0 };
+                        const k = a.tipo==='Férias'?'ferias':a.tipo==='Falta'?'falta':a.tipo==='Baixa'?'baixa':'outro';
+                        evMensal[a.mes][k] += a.dias;
+                    });
+                    mapaHorasDetalhe.forEach(r => {
+                        let mesAno = r.mes.toString();
+                        if(mesAno.includes('-')) { const p=mesAno.split('-'); mesAno=p[1]+'/'+p[0]; }
+                        if(filtroAno && !mesAno.endsWith(filtroAno)) return;
+                        if(!evMensal[mesAno]) evMensal[mesAno] = { ferias:0, falta:0, baixa:0, outro:0, previstas:0 };
+                        evMensal[mesAno].previstas += r.total;
+                    });
+                    const mesesOrdenados = Object.keys(evMensal).sort((a,b)=>{
+                        const [ma,ya]=a.split('/'); const [mb,yb]=b.split('/');
+                        return (parseInt(ya)*12+parseInt(ma)) - (parseInt(yb)*12+parseInt(mb));
+                    });
+
+                    const TIPO_CORES = { 'Falta':'#ef4444', 'Baixa':'#f97316', 'Acidente':'#a855f7', 'Férias':'#3b82f6', 'Outro':'#6b7280' };
+
+                    if(!ausencias.length && !mapaHorasDetalhe.length) {
+                        return e('div',{className:'section'},
+                            e('div',{style:{textAlign:'center',padding:'60px 20px',color:'#64748b'}},
+                                e('div',{style:{fontSize:'48px',marginBottom:'16px'}},'🏥'),
+                                e('h3',{style:{color:'#94a3b8',marginBottom:'8px'}},'Sem dados de absentismo'),
+                                urlConfiguracoes
+                                    ? e('button',{className:'btn btn-primary',onClick:carregarConfiguracoes,disabled:isLoadingConfig,style:{marginTop:'16px'}},
+                                        isLoadingConfig ? '⏳ A carregar...' : '🔄 Carregar Configurações')
+                                    : e('p',null,'Configure o URL do Fluxo 2 (Configurações) nas definições ⚙️')
+                            )
+                        );
+                    }
+
+                    return e('div',null,
+                        // Botão atualizar
+                        e('div',{style:{display:'flex',justifyContent:'flex-end',marginBottom:'16px'}},
+                            e('button',{className:'btn btn-secondary',onClick:carregarConfiguracoes,disabled:isLoadingConfig,style:{fontSize:'12px',padding:'6px 14px'}},
+                                isLoadingConfig ? '⏳ A atualizar...' : '🔄 Atualizar Absentismo')
+                        ),
+                        // KPI cards
+                        e('div',{className:'kpi-grid',style:{marginBottom:'24px'}},
+                            e('div',{className:'kpi-card'},
+                                e('div',{className:'kpi-label'},'Taxa de Absentismo'),
+                                e('div',{className:'kpi-value',style:{color: taxaAbsentismo>5?'#ef4444':taxaAbsentismo>2?'#f97316':'#22c55e'}},
+                                    taxaAbsentismo.toFixed(1)+'%'),
+                                e('div',{className:'kpi-sub'},'Faltas + Baixas')
+                            ),
+                            e('div',{className:'kpi-card'},
+                                e('div',{className:'kpi-label'},'Horas Ausentes'),
+                                e('div',{className:'kpi-value',style:{color:'#f87171'}}, totalHorasAusentes.toFixed(0)+'h'),
+                                e('div',{className:'kpi-sub'},'Faltas e baixas')
+                            ),
+                            e('div',{className:'kpi-card'},
+                                e('div',{className:'kpi-label'},'Horas Previstas'),
+                                e('div',{className:'kpi-value'}, totalHorasPrevistas.toFixed(0)+'h'),
+                                e('div',{className:'kpi-sub'},'Mapa de horas')
+                            ),
+                            e('div',{className:'kpi-card'},
+                                e('div',{className:'kpi-label'},'Ocorrências'),
+                                e('div',{className:'kpi-value',style:{color:'#fb923c'}}, ausAbsentismo.length),
+                                e('div',{className:'kpi-sub'},'Registos período')
+                            )
+                        ),
+
+                        // Linha 1: Por tipo + Evolução mensal
+                        e('div',{style:{display:'grid',gridTemplateColumns:'1fr 2fr',gap:'16px',marginBottom:'16px'}},
+                            // Por tipo
+                            e('div',{className:'section'},
+                                e('div',{className:'section-header'},e('h3',{className:'section-title'},'📊 Por Tipo de Ausência')),
+                                e('table',{style:{width:'100%',borderCollapse:'collapse'}},
+                                    e('thead',null,e('tr',null,
+                                        ['Tipo','Ocorr.','Dias','Horas'].map(h=>e('th',{key:h,style:{textAlign:h==='Tipo'?'left':'right',padding:'8px',color:'#64748b',fontSize:'12px',borderBottom:'1px solid #1e293b'}},h))
+                                    )),
+                                    e('tbody',null,
+                                        Object.entries(porTipo).sort((a,b)=>b[1].dias-a[1].dias).map(([tipo,d])=>
+                                            e('tr',{key:tipo,style:{borderBottom:'1px solid #0f172a'}},
+                                                e('td',{style:{padding:'8px',display:'flex',alignItems:'center',gap:'8px'}},
+                                                    e('span',{style:{width:'10px',height:'10px',borderRadius:'50%',background:TIPO_CORES[tipo]||'#6b7280',display:'inline-block'}}),
+                                                    e('span',{style:{color:'#e2e8f0',fontSize:'13px'}},tipo)
+                                                ),
+                                                e('td',{style:{textAlign:'right',padding:'8px',color:'#94a3b8',fontSize:'13px'}},d.ocorrencias),
+                                                e('td',{style:{textAlign:'right',padding:'8px',color:'#94a3b8',fontSize:'13px'}},d.dias),
+                                                e('td',{style:{textAlign:'right',padding:'8px',color:'#cbd5e1',fontSize:'13px',fontWeight:'600'}},d.horas+'h')
+                                            )
+                                        )
+                                    )
+                                )
+                            ),
+
+                            // Evolução mensal
+                            e('div',{className:'section'},
+                                e('div',{className:'section-header'},e('h3',{className:'section-title'},'📈 Evolução Mensal')),
+                                mesesOrdenados.length === 0 ?
+                                    e('p',{style:{color:'#64748b',textAlign:'center',padding:'20px'}},'Sem dados') :
+                                e('div',{style:{overflowX:'auto'}},
+                                    e('table',{style:{width:'100%',borderCollapse:'collapse',minWidth:'400px'}},
+                                        e('thead',null,e('tr',null,
+                                            ['Mês','Férias','Falta','Baixa','Outro','Taxa %'].map(h=>e('th',{key:h,style:{textAlign:h==='Mês'?'left':'right',padding:'8px',color:'#64748b',fontSize:'12px',borderBottom:'1px solid #1e293b'}},h))
+                                        )),
+                                        e('tbody',null,
+                                            mesesOrdenados.map(mes => {
+                                                const d = evMensal[mes];
+                                                const horasAus = (d.falta + d.baixa + d.outro) * HORAS_DIA;
+                                                const taxa = d.previstas > 0 ? (horasAus / d.previstas * 100) : 0;
+                                                return e('tr',{key:mes,style:{borderBottom:'1px solid #0f172a'}},
+                                                    e('td',{style:{padding:'8px',color:'#e2e8f0',fontSize:'13px',fontWeight:'600'}},mes),
+                                                    e('td',{style:{textAlign:'right',padding:'8px',color:'#3b82f6',fontSize:'13px'}},d.ferias>0?d.ferias+'d':'—'),
+                                                    e('td',{style:{textAlign:'right',padding:'8px',color:'#ef4444',fontSize:'13px',fontWeight:d.falta>0?'600':'400'}},d.falta>0?d.falta+'d':'—'),
+                                                    e('td',{style:{textAlign:'right',padding:'8px',color:'#f97316',fontSize:'13px',fontWeight:d.baixa>0?'600':'400'}},d.baixa>0?d.baixa+'d':'—'),
+                                                    e('td',{style:{textAlign:'right',padding:'8px',color:'#6b7280',fontSize:'13px'}},d.outro>0?d.outro+'d':'—'),
+                                                    e('td',{style:{textAlign:'right',padding:'8px'}},
+                                                        e('span',{style:{
+                                                            color: taxa>5?'#ef4444':taxa>2?'#f97316':'#22c55e',
+                                                            fontWeight:'600', fontSize:'13px'
+                                                        }}, taxa > 0 ? taxa.toFixed(1)+'%' : '—')
+                                                    )
+                                                );
+                                            })
+                                        )
+                                    )
+                                )
+                            )
+                        ),
+
+                        // Tabela por colaborador
+                        e('div',{className:'section'},
+                            e('div',{className:'section-header'},e('h3',{className:'section-title'},'👤 Faltas por Colaborador')),
+                            e('div',{style:{overflowX:'auto'}},
+                                e('table',{style:{width:'100%',borderCollapse:'collapse'}},
+                                    e('thead',null,e('tr',null,
+                                        ['Colaborador','Ocorr.','Dias','Horas Ausentes','Horas Previstas','Taxa','Tipos'].map(h=>
+                                            e('th',{key:h,style:{textAlign:h==='Colaborador'||h==='Tipos'?'left':'right',padding:'10px 8px',color:'#64748b',fontSize:'12px',borderBottom:'1px solid #1e293b'}},h)
+                                        )
+                                    )),
+                                    e('tbody',null,
+                                        colabOrdenados.map(([nome,d])=>
+                                            e('tr',{key:nome,style:{borderBottom:'1px solid #0f172a'}},
+                                                e('td',{style:{padding:'10px 8px',color:'#e2e8f0',fontSize:'13px'}},nome),
+                                                e('td',{style:{textAlign:'right',padding:'10px 8px',color:'#94a3b8',fontSize:'13px'}},d.ocorrencias||0),
+                                                e('td',{style:{textAlign:'right',padding:'10px 8px',color:'#cbd5e1',fontSize:'13px',fontWeight:'600'}},d.dias||0),
+                                                e('td',{style:{textAlign:'right',padding:'10px 8px',color:'#f87171',fontSize:'13px'}},d.horas>0?d.horas+'h':'—'),
+                                                e('td',{style:{textAlign:'right',padding:'10px 8px',color:'#94a3b8',fontSize:'13px'}},d.horasPrevistas?(d.horasPrevistas.toFixed(0)+'h'):'—'),
+                                                e('td',{style:{textAlign:'right',padding:'10px 8px'}},
+                                                    d.taxa > 0 ? e('span',{style:{
+                                                        background: d.taxa>5?'rgba(239,68,68,0.15)':d.taxa>2?'rgba(249,115,22,0.15)':'rgba(34,197,94,0.15)',
+                                                        color: d.taxa>5?'#ef4444':d.taxa>2?'#f97316':'#22c55e',
+                                                        padding:'2px 8px', borderRadius:'12px', fontSize:'12px', fontWeight:'600'
+                                                    }}, d.taxa.toFixed(1)+'%') : e('span',{style:{color:'#22c55e',fontSize:'12px'}},'0%')
+                                                ),
+                                                e('td',{style:{padding:'10px 8px'}},
+                                                    e('div',{style:{display:'flex',gap:'4px',flexWrap:'wrap'}},
+                                                        Object.entries(d.tipos).map(([tipo,dias])=>
+                                                            e('span',{key:tipo,style:{
+                                                                background:`${TIPO_CORES[tipo]||'#6b7280'}22`,
+                                                                color: TIPO_CORES[tipo]||'#6b7280',
+                                                                padding:'1px 6px',borderRadius:'8px',fontSize:'11px'
+                                                            }},tipo+' '+dias+'d')
+                                                        )
+                                                    )
+                                                )
+                                            )
+                                        )
+                                    )
+                                )
+                            )
+                        )
+                    );
+                })(),
+
+
             );
         }
         
         ReactDOM.render(e(App), document.getElementById('root'));
+    </script>
+    <script>
+        // Service Worker: força atualização e limpa caches antigos
+        if('serviceWorker' in navigator) {
+            const SW_VERSION = '2026-03-13-v1';
+            const swCode = `
+                const CACHE = 'kpi-embaresa-${SW_VERSION}';
+                self.addEventListener('install', e => {
+                    self.skipWaiting();
+                });
+                self.addEventListener('activate', e => {
+                    e.waitUntil(
+                        caches.keys().then(keys => Promise.all(
+                            keys.filter(k => k !== CACHE).map(k => caches.delete(k))
+                        )).then(() => self.clients.claim())
+                    );
+                });
+                self.addEventListener('fetch', e => {
+                    // Network first - nunca servir cache para o HTML principal
+                    e.respondWith(fetch(e.request).catch(() => caches.match(e.request)));
+                });
+            `.replace('${SW_VERSION}', SW_VERSION);
+            
+            const blob = new Blob([swCode], {type: 'application/javascript'});
+            const swUrl = URL.createObjectURL(blob);
+            
+            navigator.serviceWorker.register(swUrl).then(reg => {
+                reg.update(); // Força verificação de atualização
+            }).catch(err => console.log('SW:', err));
+        }
     </script>
 </body>
 </html>
