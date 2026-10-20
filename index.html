@@ -177,7 +177,18 @@
         // A operação saiu do catálogo em 03-09-2026; ficam os 16 registos de março/abril
         // de 2026 (30h), que o Rastreio precisa para a história dessas caixas.
         function ehPreparacaoLote(op){ return /bolsa\s+de\s+alum/i.test(String(op||'')); }
-        function calcDuracao(ini, fim) { try { const i=parseExcelTime(ini), f=parseExcelTime(fim); if(!i||!f) return 0; const [hi,mi]=i.split(':').map(Number), [hf,mf]=f.split(':').map(Number); let d=((hf*60)+mf)-((hi*60)+mi); if(d<0) d=(24*60)+d; return d; } catch(e){return 0;} }
+        // 19-10-2026: soldadura sem número de caixa — no quiosque a soldadura faz uma ESTRUTURA (S<mmdd>-<hhmmss>) que se liga à caixa
+// no início da montagem (folha Fases: linha LIG na caixa, Job = estrutura). A KPI conta a soldadura NA CAIXA (série e artigo dela).
+window._kpiLig = (function(){ try{ return JSON.parse(localStorage.getItem('kpi_lig')||'{}'); }catch(e){ return {}; } })();
+function kpiRemapEstr(r){ const lg=r && r.serie && (window._kpiLig||{})[r.serie]; if(!lg || r._estr) return r;
+  return Object.assign({}, r, { _estr:r.serie, serie:lg.serie, artigo:lg.artigo||r.artigo, caixa:lg.artigo||r.caixa, comentarios:(r.comentarios||'')+' [estrutura '+r.serie+']' }); }
+async function kpiCarregarLig(url, aplicar){ if(!url) return; try{
+  const x=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}',cache:'no-store'}).then(r=>r.json());
+  const a=Array.isArray(x)?x:((x&&x.value)||[]), m={};
+  a.forEach(r=>{ if(r.Fase==='LIG' && r.Job) m[String(r.Job).trim().toUpperCase()]={ serie:String(r.Serie||'').trim().toUpperCase(), artigo:String(r.Artigo||'').trim() }; });
+  window._kpiLig=m; try{ localStorage.setItem('kpi_lig',JSON.stringify(m)); }catch(e){}
+  if(aplicar && Object.keys(m).length) aplicar(); }catch(e){} }
+function calcDuracao(ini, fim) { try { const i=parseExcelTime(ini), f=parseExcelTime(fim); if(!i||!f) return 0; const [hi,mi]=i.split(':').map(Number), [hf,mf]=f.split(':').map(Number); let d=((hf*60)+mf)-((hi*60)+mi); if(d<0) d=(24*60)+d; return d; } catch(e){return 0;} }
         
         function minutosParaHoras(m) { if(!m||m===0) return '0h'; const h=Math.floor(m/60), min=Math.round(m%60); return min===0 ? h+'h' : h+'h '+min+'m'; }
         function formatNumber(n, d=0) { if(n===undefined||n===null||isNaN(n)) return '0'; return n.toLocaleString('pt-PT',{minimumFractionDigits:d,maximumFractionDigits:d}); }
@@ -626,7 +637,7 @@
                                 duracao: duracao,
                                 mesAno: mesAno
                             };
-                        }).filter(r => r.operacao);
+                        }).filter(r => r.operacao).map(kpiRemapEstr);   // 19-10: estrutura soldada → caixa
                         // ── Limpeza de dados: normalizar UNIDADE (junta "Evora1-Montagem"/"Évora 1-Montagem") e
                         //    preencher TIPOLOGIA em falta a partir do artigo (evita linhas duplicadas / "Sem Tipologia" a 0h)
                         const normU=(u)=>{ let s=String(u||'').trim(); if(!s) return s; const i=s.indexOf('-'); let pre=i>=0?s.slice(0,i):s, suf=i>=0?s.slice(i):''; const p=pre.toLowerCase().replace(/\s+/g,''); if(/^[eé]vora1$/.test(p))pre='Évora 1'; else if(/^[eé]vora2$/.test(p))pre='Évora 2'; return pre+suf; };
@@ -1503,7 +1514,9 @@
                     if(!ad){ const h=new Date(); ad=h.getFullYear()+'-'+String(h.getMonth()+1).padStart(2,'0'); localStorage.setItem('kpi_aoDesde', ad); }
                     setAoDesde(ad);
                     const svAo=localStorage.getItem('kpi_aoVersoes');
-                    fetch('config.json',{cache:'no-store'}).then(r=>r.json()).then(j=>{
+                    // 19-10-2026: online não há config.json → lê o mesmo config da nuvem que o quiosque Web (etapas do stock, objetivos, ligações das estruturas)
+                    fetch('config.json',{cache:'no-store'}).then(r=>{ if(!r.ok) throw new Error('sem config local'); return r.json(); })
+                      .catch(()=>fetch('https://defaultcade90c14fe343a3860494c20418f8.fb.environment.api.powerplatform.com:443/powerautomate/automations/direct/cu/04/workflows/3aca907317474a4eb1b0ed7a66633884/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=zcGqAP9EoJ8WgfX_liO4X2dOvNtHAg-JAItn4SMSxeM',{cache:'no-store'}).then(r=>r.ok?r.json():null)).then(j=>{
                         if(j){
                             if(j.temposArtigoOperacao) setAoCfg(j.temposArtigoOperacao);
                             if(j.temposOperacao) setAoAntigoOp(j.temposOperacao);
@@ -1514,6 +1527,7 @@
                             // ficheiro nem do fluxo, que é lento. Por isso MANDA sobre o fluxo:
                             // o que vier daqui fica, e o fluxo só preenche o que faltar.
                             window._kpiEtapas = j.etapas || window._kpiEtapas || {};   // 16-10: pesos das etapas (desconto do stock)
+                            kpiCarregarLig(j.urlFasesLer, ()=>setRegistosOperacoes(prev=>(prev||[]).map(kpiRemapEstr)));   // 19-10: estruturas soldadas
                             if(Array.isArray(j.objetivosArtigoOperacao)){
                                 const cAte={}, cApos={}, cA16={};
                                 j.objetivosArtigoOperacao.forEach(o=>{
