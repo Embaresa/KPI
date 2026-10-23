@@ -124,6 +124,8 @@
 <body>
     <div id="root"></div>
     <script>
+    // 22-10-2026: ela — "uniformizar para maquinação" (Maquinacao / Maquinaçao / Maquinação vinham em linhas separadas)
+    function normTip(t){ return /^\s*maquina[cç][aã]?o\s*$/i.test(String(t==null?'':t)) ? 'Maquinação' : t; }
         const { useState, useEffect, useMemo, useRef } = React;
         const e = React.createElement;
         
@@ -625,7 +627,7 @@ function calcDuracao(ini, fim) { try { const i=parseExcelTime(ini), f=parseExcel
                             return {
                                 data: dataFormatada,
                                 unidadeProducao: row['Unidade Produção'] || row['UnidadeProducao'] || row['unidadeProducao'],
-                                tipologia: row['Tipo Caixa'] || row['TipoCaixa'] || row['tipologia'],
+                                tipologia: normTip(row['Tipo Caixa'] || row['TipoCaixa'] || row['tipologia']),
                                 artigo: row['Artigo'] || row['artigo'],
                                 caixa: row['Artigo'] || row['Programa ANN'] || row['ProgramaANN'] || row['caixa'],
                                 operacao: row['Operação'] || row['Operacao'] || row['operacao'],
@@ -765,7 +767,7 @@ function calcDuracao(ini, fim) { try { const i=parseExcelTime(ini), f=parseExcel
                             const faturada = isFaturaValida(numFaturaRaw);
                             
                             return {
-                                tipologia: row['Tipologia'] || row['tipologia'],
+                                tipologia: normTip(row['Tipologia'] || row['tipologia']),
                                 caixa: row['Caixa'] || row['caixa'],
                                 ligacao: row['Ligação'] || row['Ligacao'] || row['ligacao'],
                                 po: row['PO'] || row['po'],
@@ -864,7 +866,7 @@ function calcDuracao(ini, fim) { try { const i=parseExcelTime(ini), f=parseExcel
                             }
                             
                             return {
-                                tipologia: row['Tipologia'] || row['tipologia'],
+                                tipologia: normTip(row['Tipologia'] || row['tipologia']),
                                 caixa: row['Caixa'] || row['caixa'],
                                 ligacao: row['Ligação'] || row['Ligacao'] || row['ligacao'],
                                 po: row['PO'] || row['po'],
@@ -1096,7 +1098,7 @@ function calcDuracao(ini, fim) { try { const i=parseExcelTime(ini), f=parseExcel
                     
                     const operacoes = dataProd.map(row => {
                         const operacao = findValue(row, ['Operação','operacao','OPERAÇÃO','Op']);
-                        const tipologia = findValue(row, ['Tipo Caixa','TipoCaixa','Tipologia','tipologia']);
+                        const tipologia = normTip(findValue(row, ['Tipo Caixa','TipoCaixa','Tipologia','tipologia']));
                         const artigo = findValue(row, ['Artigo','artigo']);
                         const colaborador = findValue(row, ['Colaborador','colaborador']);
                         const unidadeProducao = findValue(row, ['Unidade Produção','UnidadeProducao','unidadeProducao','Unidade']);
@@ -1837,7 +1839,11 @@ function calcDuracao(ini, fim) { try { const i=parseExcelTime(ini), f=parseExcel
                 // como perturbacao (tabelas, grafico, totais). No OEE continua a contar, mas do
                 // outro lado: sai do tempo planeado, nao entra no tempo parado.
                 const ehRefeicao = (r) => classePert(r.tipo, r.colaborador) === 'REF';
-                const pertVisiveis = pertFiltradas.filter(r => !ehRefeicao(r));
+                // 22-10-2026: ela — "a produção de semiacabados deixa de ser perturbação e afinal nunca foi" → as paragens «Preparação material para stock de
+                // semiacabados…» (antes do quiosque novo e dos Componentes para stock) saem das perturbações e contam-se à parte. O OEE já as dava como produtivas.
+                const ehSemiacab = (r) => /stock de semi.?acabados/i.test(r.tipo || '');
+                const tempoSemiacab = pertFiltradas.filter(ehSemiacab).reduce((s,r) => s + (r.duracao||0), 0);
+                const pertVisiveis = pertFiltradas.filter(r => !ehRefeicao(r) && !ehSemiacab(r));
 
                 const tempoPerturbacoes = pertVisiveis.reduce((s,r) => s+r.duracao,0);
                 const numPerturbacoes = pertVisiveis.length;
@@ -2287,7 +2293,8 @@ function calcDuracao(ini, fim) { try { const i=parseExcelTime(ini), f=parseExcel
                     const artigos = Array.from(a.artigos || []);
                     // Cada linha já corresponde a um artigo específico (chave inclui artigo)
                     const caixaDisplay = artigos[0] || a.caixa;
-                    const qtdProduzida = getQtdPorOperacao(a.tipologia, artigos, a.operacao);
+                    // 22-10-2026: ela — "tenho de definir objetivos" (Componentes stock com Qtd Prod. 0 e rácio N/A: a quantidade vinha das encomendas). Nos componentes a quantidade são os JOGOS: o N de cada trabalho "N*<ID>-xxxx" (cada trabalho conta uma vez)
+                    const qtdProduzida = (artigos.includes('Componentes stock') && a._ser) ? Object.keys(a._ser).reduce((s,x)=>s+(parseInt((String(x).match(/^(\d+)\*/)||[])[1])||0),0) : getQtdPorOperacao(a.tipologia, artigos, a.operacao);
                     const tempoMedioPorCaixa = qtdProduzida > 0 ? a.tempoTotal / qtdProduzida : 0;
                     const _fs = a._ser ? Object.values(a._ser) : []; const _fator = _fs.length ? _fs.reduce((x,y)=>x+y,0)/_fs.length : 1;
                     const tempoObjetivoH = a.tempoObjetivo * _fator / 60; // converter para horas (16-10: menos as etapas vindas do stock)
@@ -2641,7 +2648,7 @@ function calcDuracao(ini, fim) { try { const i=parseExcelTime(ini), f=parseExcel
                     totalProduzido, totalEntregue, totalEmbalado, totalEncEntregues, totalEncEmStock, totalEncFatNaoTerm, unidadesEmStock,
                     porTipologia, porCaixa, porMes,
                     tempoTotalOps, numOperacoes, eficienciaGeral, eficienciaPorTipologia, performancePorCaixa,
-                    tempoPerturbacoes, numPerturbacoes, perturbacoesPorTipo, perturbacoesPorCategoria,
+                    tempoPerturbacoes, numPerturbacoes, perturbacoesPorTipo, perturbacoesPorCategoria, tempoSemiacab,
                     disponibilidade, performance, qualidade, oee, oeePorMes, eficienciaProdutiva,
                     evolucaoMensal, mesesUnicos, tipologias, analiseArray, anosUnicos,
                     evolucaoOperacoes, mesesEvolucao
@@ -2763,6 +2770,43 @@ function calcDuracao(ini, fim) { try { const i=parseExcelTime(ini), f=parseExcel
                     }
                 });
             }, [kpis.perturbacoesPorTipo, activeTab]);
+
+            // 22-10-2026: ela — "quero um gráfico com a evolução mensal das perturbações". Barras empilhadas por mês (horas): as 5 que mais
+            // pesam no ano escolhido + "Outras"; o total do mês no tooltip. Sem a refeição (não é perturbação). Não depende do filtro do mês.
+            useEffect(() => {
+                if(activeTab !== 'perturbacoes' || !registosPerturbacoes.length) return;
+                const ctx = document.getElementById('chartPerturbacoesMes'); if(!ctx) return;
+                if(chartRefs.current.perturbacoesMes) chartRefs.current.perturbacoesMes.destroy();
+                const ano = r => String(r.mesAno||'').split('/')[1] || '';
+                const L = registosPerturbacoes.filter(r => r.mesAno && (!filtroAno || ano(r) === String(filtroAno)) && classePert(r.tipo, r.colaborador) !== 'REF' && !/stock de semi.?acabados/i.test(r.tipo || ''));   // 22-10: semiacabados = produção, não perturbação
+                const chave = m => { const p = String(m).split('/'); return (p[1]||'') + '-' + (p[0]||'').padStart(2,'0'); };
+                const meses = [...new Set(L.map(r => r.mesAno))].sort((a,b) => chave(a).localeCompare(chave(b)));
+                const porTipo = {}; L.forEach(r => { porTipo[r.tipo] = (porTipo[r.tipo]||0) + (r.duracao||0); });
+                const top = Object.entries(porTipo).sort((a,b) => b[1]-a[1]).slice(0,5).map(x => x[0]);
+                const cores = ['#f59e0b', '#ef4444', '#8b5cf6', '#10b981', '#3b82f6'];
+                const NM = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+                const soma = (m, f) => L.filter(r => r.mesAno === m && f(r)).reduce((s,r) => s + (r.duracao||0), 0) / 60;
+                const curto = t => { const x = String(t).replace(/^Prepara\S+o material para stock de semiacabados[\s\-]*/i, 'Stock semiacabados — ').replace(/·\s*$/, '').trim(); return x.length > 48 ? x.substring(0,48) + '…' : x; };   // as 3 «Preparação material para stock…» distinguem-se
+                const ds = top.map((t,i) => ({ label: curto(t), data: meses.map(m => +soma(m, r => r.tipo === t).toFixed(1)), backgroundColor: cores[i], stack: 's' }));
+                ds.push({ label: 'Outras', data: meses.map(m => +soma(m, r => !top.includes(r.tipo)).toFixed(1)), backgroundColor: '#64748b', stack: 's' });
+                chartRefs.current.perturbacoesMes = new Chart(ctx, {
+                    type: 'bar',
+                    data: { labels: meses.map(m => { const p = m.split('/'); return (NM[Number(p[0])-1]||p[0]) + ' ' + String(p[1]||'').slice(2); }), datasets: ds },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        plugins: {
+                            legend: { position: 'bottom', labels: { color: '#94a3b8', boxWidth: 12 } },
+                            tooltip: { mode: 'index', intersect: false, callbacks: {
+                                label: (c) => c.parsed.y ? ' ' + c.dataset.label + ': ' + c.parsed.y.toFixed(1) + 'h' : null,
+                                footer: (it) => 'Total do mês: ' + it.reduce((s,x) => s + (x.parsed.y||0), 0).toFixed(1) + 'h' } }
+                        },
+                        scales: {
+                            x: { stacked: true, ticks: { color: '#94a3b8' }, grid: { display: false } },
+                            y: { stacked: true, ticks: { color: '#64748b', callback: v => v + 'h' }, grid: { color: 'rgba(148,163,184,0.1)' } }
+                        }
+                    }
+                });
+            }, [registosPerturbacoes, activeTab, filtroAno]);
             
             const exportarPDF = async () => {
                 const { jsPDF } = window.jspdf;
@@ -3190,7 +3234,12 @@ function calcDuracao(ini, fim) { try { const i=parseExcelTime(ini), f=parseExcel
                         // Gráfico de Perturbações Top 5
                         e('div',{className:'section'},
                             e('h3',{className:'section-title',style:{marginBottom:'16px'}},'⚠️ Perturbações - Top 5'),
+                            kpis.tempoSemiacab > 0 && e('div',{style:{margin:'-8px 0 12px',fontSize:'13px',color:'var(--accent-green)'}},'🧰 Produção de semiacabados registada como paragem (antes dos «Componentes para stock»): '+minutosParaHoras(kpis.tempoSemiacab)+' — conta como produção, fora das perturbações.'),
                             e('div',{className:'chart-container',style:{height:'300px'}}, e('canvas',{id:'chartPerturbacoes'}))
+                        ),
+                        e('div',{className:'section'},
+                            e('h3',{className:'section-title',style:{marginBottom:'16px'}},'📈 Perturbações - evolução mensal'+(filtroAno?' ('+filtroAno+')':'')),
+                            e('div',{className:'chart-container',style:{height:'340px'}}, e('canvas',{id:'chartPerturbacoesMes'}))
                         ),
                         // Tabela detalhada de perturbações
                         e('div',{className:'section'},
